@@ -312,16 +312,21 @@ export class AIController {
   }
 
   // ── movement ────────────────────────────────────────────────────────────
+  /** Shortest path via the sim's graph (jkstra) when present, else built-in Dijkstra. */
+  _shortest(sim, start, end, weightFn) {
+    if (typeof sim.shortestPath === 'function') return sim.shortestPath(start, end, weightFn);
+    return Pathfinder.shortestPath(sim.maze, start, end, weightFn, 0.1);
+  }
+
   _follow(tank, sim, targetTile, myTile) {
     if (this.repathTimer <= 0 || this.path.length === 0) {
       this.repathTimer = 0.3;
       const threatWeight = lerpTrait(0.1, 1.2, this.t.cleverness);
-      this.path = Pathfinder.shortestPath(
-        sim.maze,
+      this.path = this._shortest(
+        sim,
         { tx: myTile.tx, ty: myTile.ty },
         { tx: targetTile.x, ty: targetTile.y },
         (tx, ty) => sim.maze.deadEndPenalty(tx, ty) * threatWeight,
-        0.1,
       );
     }
     this._consumeReached(tank, sim);
@@ -354,7 +359,7 @@ export class AIController {
       const tiles = sim.maze.reachableTiles();
       const far = tiles.filter((t) => sim.maze.tileDistance(myTile.tx, myTile.ty, t.x, t.y) >= 2);
       const target = far.length ? rng.pick(far) : rng.pick(tiles);
-      this.path = Pathfinder.shortestPath(sim.maze, { tx: myTile.tx, ty: myTile.ty }, { tx: target.x, ty: target.y });
+      this.path = this._shortest(sim, { tx: myTile.tx, ty: myTile.ty }, { tx: target.x, ty: target.y }, null);
     }
     this._consumeReached(tank, sim);
     if (this.path.length === 0) return { drive: 0, turn: rng.range(-1, 1), fire: false, firePressed: false };
