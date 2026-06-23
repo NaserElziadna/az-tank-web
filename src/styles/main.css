@@ -72,6 +72,10 @@ body {
 .menu {
   gap: 26px;
   text-align: center;
+  /* Original menu artwork if present in public/assets/ (404 → gradient shows). */
+  background-image: url('/assets/menu/background.png');
+  background-size: cover;
+  background-position: center;
 }
 .menu__logo {
   font-weight: 900;

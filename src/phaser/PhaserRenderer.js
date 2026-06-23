@@ -8,9 +8,20 @@ import { EffectsLayer } from '../rendering/effects/EffectsLayer.js';
 import { Palette } from '../rendering/Palette.js';
 import { C } from '../constants/GameConstants.js';
 import { rng } from '../core/math/Random.js';
-import { RoundPhase } from '../models/enums.js';
+import { RoundPhase, CollectibleType } from '../models/enums.js';
 
 const HUD_HEIGHT = 104;
+
+/**
+ * Sprite-draw tuning for the asset-based tank. Because I can't run the build,
+ * these are exposed for quick adjustment after a first look: if the tank points
+ * the wrong way, try rotationOffset of 0, ±π/2, or π; tweak lengthScale if it's
+ * sized wrong.
+ */
+const SPRITE = {
+  rotationOffset: Math.PI / 2, // icon art faces "up"; forward is +X
+  lengthScale: 1.15, // icon's longer side ≈ TANK.HEIGHT * this (metres)
+};
 
 /**
  * Renders a {@link B2Match} onto the Phaser canvas's 2D context, reusing the
@@ -19,9 +30,17 @@ const HUD_HEIGHT = 104;
  * + countdown/result overlay) and runs the particle effects layer.
  */
 export class PhaserRenderer {
-  /** @param {Phaser.Game} game @param {import('../core/events/EventBus.js').EventBus} bus @param {string} version */
-  constructor(game, bus, version = 'v1.0') {
+  /**
+   * @param {Phaser.Game} game
+   * @param {import('../core/events/EventBus.js').EventBus} bus
+   * @param {string} version
+   * @param {import('./AssetStore.js').AssetStore} [assets]
+   * @param {import('./TankIconCompositor.js').TankIconCompositor} [compositor]
+   */
+  constructor(game, bus, version = 'v1.0', assets = null, compositor = null) {
     this.game = game;
+    this.assets = assets;
+    this.compositor = compositor;
     this.camera = new Camera();
     this.maze = new MazeRenderer();
     this.tankR = new TankRenderer();
@@ -67,11 +86,12 @@ export class PhaserRenderer {
       ctx.save();
       ctx.setTransform(s, 0, 0, s, ox, oy);
       this.maze.draw(ctx, round.maze);
-      this.colR.draw(ctx, round.collectibles, alpha);
+      this._drawCollectibles(ctx, round.collectibles, alpha);
       this.colR.drawMines(ctx, round.mines);
       for (const tank of round.tanks) {
         if (!tank.alive) continue;
-        this.tankR.draw(ctx, this._tankView(tank, round, alpha), 1);
+        const view = this._tankView(tank, round, alpha);
+        if (!this._drawTankSprite(ctx, view)) this.tankR.draw(ctx, view, 1); // vector fallback
       }
       this.projR.draw(ctx, round.projectiles, round.beams, alpha);
       this.effects.render(ctx);
@@ -143,6 +163,82 @@ export class PhaserRenderer {
       ctx.fillStyle = '#fff';
       ctx.fillText(sub, w / 2, h / 2 + size2(w) + 6);
     }
+  }
+
+  /** Draw the composited tank sprite. Returns false if no asset (→ vector fallback). */
+  _drawTankSprite(ctx, view) {
+    if (!this.compositor) return false;
+    const canvas = this.compositor.get(view.color);
+    if (!canvas) return false;
+
+    // Aimer sight under the tank (world space).
+    if (view.aimer && view.aimer.points && view.aimer.points.length > 1) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = '#ff3b3b';
+      ctx.lineWidth = 0.12;
+      ctx.setLineDash([0.5, 0.4]);
+      ctx.beginPath();
+      ctx.moveTo(view.aimer.points[0].x, view.aimer.points[0].y);
+      for (let i = 1; i < view.aimer.points.length; i++) ctx.lineTo(view.aimer.points[i].x, view.aimer.points[i].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const iw = canvas.width;
+    const ih = canvas.height;
+    const scale = (C.TANK.HEIGHT * SPRITE.lengthScale) / Math.max(iw, ih);
+    ctx.save();
+    ctx.translate(view.x, view.y);
+    ctx.rotate(view.rotation + SPRITE.rotationOffset);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(canvas, (-iw * scale) / 2, (-ih * scale) / 2, iw * scale, ih * scale);
+    ctx.restore();
+
+    if (view.shield) {
+      const r = C.UPGRADES.SHIELD.radius;
+      ctx.save();
+      ctx.globalAlpha = view.shield.ratio < 0.34 ? 0.4 + 0.4 * Math.abs(Math.sin(performance.now() / 80)) : 0.7;
+      ctx.strokeStyle = 'rgba(90,170,255,0.85)';
+      ctx.lineWidth = 0.22;
+      ctx.beginPath();
+      ctx.arc(view.x, view.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    return true;
+  }
+
+  /** Gold/diamond use the real sprites when present; crates use vector art. */
+  _drawCollectibles(ctx, collectibles, alpha) {
+    const gold = this.assets && this.assets.get('game.gold');
+    const diamond = this.assets && this.assets.get('game.diamond');
+    const vector = [];
+    for (const c of collectibles) {
+      let img = null;
+      let size = 0;
+      if (c.category === CollectibleType.GOLD && gold) {
+        img = gold;
+        size = C.COLLECTIBLE.GOLD_RADIUS * 2;
+      } else if (c.category === CollectibleType.DIAMOND && diamond) {
+        img = diamond;
+        size = C.COLLECTIBLE.DIAMOND_H;
+      }
+      if (!img) {
+        vector.push(c);
+        continue;
+      }
+      const pop = Math.min(1, c.spawnAnim);
+      const aspect = img.width / img.height;
+      const hgt = size * pop;
+      const wid = hgt * aspect;
+      ctx.save();
+      ctx.translate(c.position.x, c.position.y);
+      ctx.rotate(c.rotation || 0);
+      ctx.drawImage(img, -wid / 2, -hgt / 2, wid, hgt);
+      ctx.restore();
+    }
+    if (vector.length) this.colR.draw(ctx, vector, alpha);
   }
 
   _tankView(tank, round, alpha) {

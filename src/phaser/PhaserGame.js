@@ -1,4 +1,4 @@
-import Phaser from 'phaser-ce';
+import Phaser from './phaserLib.js';
 import { Player } from '../models/Player.js';
 import { ControllerType } from '../models/enums.js';
 import { colorForSlot } from '../rendering/Palette.js';
@@ -6,6 +6,8 @@ import { schemeForSlot } from '../core/input/ControlSchemes.js';
 import { B2Match } from './B2Match.js';
 import { PhaserRenderer } from './PhaserRenderer.js';
 import { PhaserControls } from './PhaserControls.js';
+import { AssetStore } from './AssetStore.js';
+import { TankIconCompositor } from './TankIconCompositor.js';
 import { C } from '../constants/GameConstants.js';
 
 /**
@@ -65,7 +67,12 @@ export class PhaserGame {
       );
     }
 
-    this.renderer = new PhaserRenderer(game, this.bus, this.version);
+    // Optional sprite assets: load asynchronously; the renderer uses vector art
+    // until they arrive, then swaps to the composited sprites automatically.
+    this.assets = new AssetStore();
+    this.assets.load(320);
+    this.compositor = new TankIconCompositor(this.assets);
+    this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor);
     this.match = new B2Match(this.bus);
     this.match.configure(players, { pointsToWin: this.setup.pointsToWin, humanControllers });
     this.match.start();
@@ -105,7 +112,13 @@ export class PhaserGame {
 
   destroy() {
     if (this.renderer) this.renderer.dispose();
-    if (this.game) this.game.destroy(true);
+    // Guard: Phaser.Game.destroy() throws if the game never finished booting.
+    try {
+      if (this.game && this.game.isBooted) this.game.destroy(true);
+    } catch (e) {
+      /* ignore teardown errors on a half-booted game */
+    }
+    this.game = null;
     this.match = null;
     this.renderer = null;
   }
