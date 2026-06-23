@@ -5,3 +5,6 @@ dist/
 
 # Reference clone used only for studying mechanics — never part of the build.
 cdn.tanktrouble.com/
+
+# Local game art copied from your download (kept out of version control).
+public/assets/
