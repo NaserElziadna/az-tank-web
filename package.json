@@ -22,5 +22,11 @@
   "license": "MIT",
   "devDependencies": {
     "vite": "^5.4.10"
+  },
+  "dependencies": {
+    "box2dweb": "^2.1.0-b",
+    "howler": "^2.2.4",
+    "jkstra": "^0.1.1",
+    "phaser-ce": "^2.20.2"
   }
 }
