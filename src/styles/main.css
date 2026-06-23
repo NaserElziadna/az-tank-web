@@ -1,0 +1,303 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   AZ Tank — global styles
+   The arena uses a soft light-grey palette (matching the classic top-down look);
+   the surrounding chrome is a clean, modern dark frame so the play-field pops.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --arena-bg: #e9e9e9;
+  --wall: #3a3a3a;
+  --frame-bg: #1b1d22;
+  --frame-bg-2: #23262d;
+  --panel-bg: #f4f4f4;
+  --text: #f5f6f8;
+  --text-dim: #aeb4bf;
+  --accent: #e0b341;
+  --tank-red: #d23b3b;
+  --tank-green: #4caf50;
+  --tank-blue: #3d7bd6;
+  --tank-yellow: #e0b341;
+  --shadow: rgba(0, 0, 0, 0.28);
+  --radius: 14px;
+  --font: 'Segoe UI', 'Trebuchet MS', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background: radial-gradient(circle at 50% 20%, var(--frame-bg-2), var(--frame-bg) 70%);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Screens stack in #app; only one is visible at a time. */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+.screen[hidden] {
+  display: none;
+}
+.screen.fade-out {
+  opacity: 0;
+}
+
+/* ── Title / menu ─────────────────────────────────────────────────────────── */
+.menu {
+  gap: 26px;
+  text-align: center;
+}
+.menu__logo {
+  font-weight: 900;
+  letter-spacing: 1px;
+  line-height: 0.9;
+  text-align: center;
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35));
+}
+.menu__logo .tank {
+  display: block;
+  font-size: clamp(46px, 9vw, 104px);
+  color: #fff;
+}
+.menu__logo .trouble {
+  display: block;
+  font-size: clamp(30px, 6vw, 70px);
+  color: var(--accent);
+}
+.menu__tagline {
+  color: var(--text-dim);
+  font-size: 15px;
+  max-width: 520px;
+  margin-top: -8px;
+}
+
+.btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 18px;
+  color: #1b1d22;
+  background: linear-gradient(180deg, #ffd766, var(--accent));
+  padding: 14px 34px;
+  border-radius: 999px;
+  box-shadow: 0 5px 0 #a9821f, 0 8px 16px var(--shadow);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.12s ease;
+}
+.btn:hover {
+  filter: brightness(1.05);
+}
+.btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #a9821f, 0 3px 8px var(--shadow);
+}
+.btn--secondary {
+  background: linear-gradient(180deg, #3a3f49, #2a2e36);
+  color: var(--text);
+  box-shadow: 0 5px 0 #15171c, 0 8px 16px var(--shadow);
+}
+.btn--ghost {
+  background: transparent;
+  color: var(--text-dim);
+  box-shadow: none;
+  font-size: 15px;
+  padding: 8px 16px;
+}
+.btn--ghost:hover {
+  color: var(--text);
+}
+
+.menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+
+/* ── Setup screen ─────────────────────────────────────────────────────────── */
+.setup {
+  gap: 22px;
+  width: min(900px, 92vw);
+}
+.setup__title {
+  font-size: 26px;
+  font-weight: 800;
+}
+.players {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+.player-card {
+  background: var(--frame-bg-2);
+  border: 2px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.player-card[data-active='false'] {
+  opacity: 0.45;
+}
+.player-card__swatch {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+.player-card__name {
+  font-weight: 700;
+  font-size: 17px;
+}
+.player-card__type {
+  display: flex;
+  gap: 6px;
+}
+.chip {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip[data-selected='true'] {
+  background: var(--accent);
+  color: #1b1d22;
+  border-color: var(--accent);
+}
+.player-card__keys {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.5;
+}
+.setup__row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.field select {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--frame-bg-2);
+  color: var(--text);
+}
+
+/* ── Game screen ──────────────────────────────────────────────────────────── */
+.game {
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.game__stage {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+#game-canvas {
+  background: var(--arena-bg);
+  border-radius: 6px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  image-rendering: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Overlay text (countdown, round result) drawn over the canvas. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  text-align: center;
+}
+.overlay__big {
+  font-size: clamp(48px, 12vw, 140px);
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.overlay__sub {
+  font-size: 22px;
+  color: var(--text);
+  margin-top: 10px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.topbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.topbar .btn--ghost {
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+.version {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  color: rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+  letter-spacing: 1px;
+  font-style: italic;
+}

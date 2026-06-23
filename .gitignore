@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Reference clone used only for studying mechanics — never part of the build.
+cdn.tanktrouble.com/

@@ -1,0 +1,26 @@
+{
+  "name": "az-tank-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AZ Tank — a clean, original re-implementation of the classic top-down tank maze battle game (Tank Trouble style). Local play: humans vs AI, 2–4 tanks.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "serve": "vite preview --port 4173"
+  },
+  "keywords": [
+    "game",
+    "canvas",
+    "tank",
+    "tank-trouble",
+    "maze",
+    "vite"
+  ],
+  "author": "AZ Tank Web",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

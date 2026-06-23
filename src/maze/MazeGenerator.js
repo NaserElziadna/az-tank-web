@@ -1,0 +1,252 @@
+import { C } from '../constants/GameConstants.js';
+import { rng as defaultRng } from '../core/math/Random.js';
+import { Maze } from './Maze.js';
+
+/**
+ * Procedural maze generator (Strategy).
+ *
+ * Reproduces the original's "probabilistic noise field" character — random tile
+ * presence + random interior wall seeds — which yields loopy, braided arenas
+ * (not perfect spanning-tree mazes). Connectivity is then guaranteed with a
+ * Kruskal-style pass that removes walls between disconnected components (keeping
+ * the loops), and spawns are placed greedily to maximise separation.
+ */
+export class MazeGenerator {
+  /** @param {import('../core/math/Random.js').Random} [rng] */
+  constructor(rng = defaultRng) {
+    this.rng = rng;
+  }
+
+  /**
+   * @param {number} playerCount
+   * @returns {Maze}
+   */
+  generate(playerCount) {
+    const { width, height } = this._dimensions(playerCount);
+    let maze = null;
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      // Bias later attempts toward fuller grids so we never starve on tiles.
+      const forceFull = attempt >= 8;
+      const tiles = this._noiseField(width, height, forceFull);
+      this._connect(tiles, width, height);
+      const present = this._largestComponent(tiles, width, height);
+      if (present.length < Math.max(playerCount * 2, playerCount + 2)) continue;
+
+      maze = new Maze(tiles);
+      maze.tankSpawns = this._placeSpawns(maze, present, playerCount);
+      if (maze.tankSpawns.length === playerCount) break;
+      maze = null;
+    }
+
+    if (!maze) {
+      // Deterministic fallback: a full open grid always works.
+      const tiles = this._fullGrid(width, height);
+      maze = new Maze(tiles);
+      maze.tankSpawns = this._placeSpawns(maze, maze.reachableTiles(), playerCount);
+    }
+    return maze;
+  }
+
+  _dimensions(n) {
+    const M = C.MAZE;
+    const i = Math.min(n, M.WIDTH_FOR_PLAYERS.length - 1);
+    let w = Math.max(M.BASE_WIDTH, M.WIDTH_FOR_PLAYERS[i]);
+    let h = Math.max(M.BASE_HEIGHT, M.HEIGHT_FOR_PLAYERS[i]);
+    w = Math.round(w * this.rng.range(1, M.MAX_RANDOM_MULTIPLIER));
+    h = Math.round(h * this.rng.range(1, M.MAX_RANDOM_MULTIPLIER));
+    return {
+      width: Math.min(w, M.MAX_WIDTH),
+      height: Math.min(h, M.MAX_HEIGHT),
+    };
+  }
+
+  /** Steps 1–3 of the spec: wall-seed grid + tile presence → top/left walls. */
+  _noiseField(width, height, forceFull) {
+    const M = C.MAZE;
+    const wallProb = this.rng.pick(M.WALL_PROBABILITIES);
+    const tileProb = forceFull ? 1 : this.rng.pick(M.TILE_PROBABILITIES);
+
+    // Directed wall seeds in {0,1,2,3} or 4 (= none).
+    const seeds = [];
+    for (let i = 0; i <= width; i++) {
+      seeds.push([]);
+      for (let j = 0; j <= height; j++) {
+        seeds[i][j] = this.rng.next() > wallProb ? 4 : Math.floor(this.rng.next() * 4);
+      }
+    }
+
+    const present = [];
+    for (let i = 0; i < width; i++) {
+      present.push([]);
+      for (let j = 0; j < height; j++) {
+        present[i][j] = this.rng.next() > tileProb ? 0 : 1;
+      }
+    }
+
+    const tiles = [];
+    for (let i = 0; i < width; i++) {
+      tiles.push([]);
+      for (let j = 0; j < height; j++) {
+        let top;
+        let left;
+        if (present[i][j]) {
+          top =
+            seeds[i][j] === 0 ||
+            (i + 1 <= width && seeds[i + 1][j] === 2) ||
+            j === 0 ||
+            (j > 0 && !present[i][j - 1]);
+          left =
+            seeds[i][j] === 1 ||
+            (j + 1 <= height && seeds[i][j + 1] === 3) ||
+            i === 0 ||
+            (i > 0 && !present[i - 1][j]);
+        } else {
+          top = j > 0 && present[i][j - 1] === 1;
+          left = i > 0 && present[i - 1][j] === 1;
+        }
+        tiles[i][j] = [present[i][j], top ? 1 : 0, left ? 1 : 0];
+      }
+    }
+    return tiles;
+  }
+
+  _fullGrid(width, height) {
+    const tiles = [];
+    for (let i = 0; i < width; i++) {
+      tiles.push([]);
+      for (let j = 0; j < height; j++) {
+        // Some random interior walls so the full grid is still maze-like.
+        tiles[i][j] = [
+          1,
+          j === 0 || this.rng.bool(0.32) ? 1 : 0,
+          i === 0 || this.rng.bool(0.32) ? 1 : 0,
+        ];
+      }
+    }
+    return tiles;
+  }
+
+  /** Kruskal-style: remove walls between adjacent present tiles in different sets. */
+  _connect(tiles, width, height) {
+    const idx = (x, y) => x * height + y;
+    const parent = new Int32Array(width * height);
+    for (let i = 0; i < parent.length; i++) parent[i] = i;
+    const find = (a) => {
+      while (parent[a] !== a) {
+        parent[a] = parent[parent[a]];
+        a = parent[a];
+      }
+      return a;
+    };
+    const union = (a, b) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent[ra] = rb;
+    };
+
+    const present = (x, y) => x >= 0 && y >= 0 && x < width && y < height && tiles[x][y][0] === 1;
+
+    // First union everything already open.
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (!present(x, y)) continue;
+        if (present(x + 1, y) && tiles[x + 1][y][2] === 0) union(idx(x, y), idx(x + 1, y));
+        if (present(x, y + 1) && tiles[x][y + 1][1] === 0) union(idx(x, y), idx(x, y + 1));
+      }
+    }
+
+    // Then knock down walls between adjacent present tiles still in different sets.
+    const pairs = [];
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (!present(x, y)) continue;
+        if (present(x + 1, y)) pairs.push([x, y, x + 1, y, 'left']);
+        if (present(x, y + 1)) pairs.push([x, y, x, y + 1, 'top']);
+      }
+    }
+    this.rng.shuffle(pairs);
+    for (const [x, y, nx, ny, side] of pairs) {
+      if (find(idx(x, y)) !== find(idx(nx, ny))) {
+        if (side === 'left') tiles[nx][ny][2] = 0;
+        else tiles[nx][ny][1] = 0;
+        union(idx(x, y), idx(nx, ny));
+      }
+    }
+  }
+
+  /** Keep only the largest connected component (drop isolated islands). */
+  _largestComponent(tiles, width, height) {
+    const seen = new Set();
+    const components = [];
+    const idx = (x, y) => x * height + y;
+    const present = (x, y) => x >= 0 && y >= 0 && x < width && y < height && tiles[x][y][0] === 1;
+    const open = (x, y, dx, dy) => {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!present(nx, ny)) return false;
+      if (dx === 1) return tiles[nx][ny][2] === 0;
+      if (dx === -1) return tiles[x][y][2] === 0;
+      if (dy === 1) return tiles[x][ny][1] === 0;
+      if (dy === -1) return tiles[x][y][1] === 0;
+      return false;
+    };
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (!present(x, y) || seen.has(idx(x, y))) continue;
+        const comp = [];
+        const stack = [[x, y]];
+        seen.add(idx(x, y));
+        while (stack.length) {
+          const [cx, cy] = stack.pop();
+          comp.push({ x: cx, y: cy });
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (open(cx, cy, dx, dy) && !seen.has(idx(cx + dx, cy + dy))) {
+              seen.add(idx(cx + dx, cy + dy));
+              stack.push([cx + dx, cy + dy]);
+            }
+          }
+        }
+        components.push(comp);
+      }
+    }
+    components.sort((a, b) => b.length - a.length);
+    const largest = components[0] || [];
+    const keep = new Set(largest.map((t) => idx(t.x, t.y)));
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (present(x, y) && !keep.has(idx(x, y))) tiles[x][y][0] = 0;
+      }
+    }
+    return largest;
+  }
+
+  /** Greedy farthest-point placement so tanks start well apart. */
+  _placeSpawns(maze, present, count) {
+    if (present.length === 0) return [];
+    const chosen = [present[this.rng.int(0, present.length - 1)]];
+    while (chosen.length < count) {
+      let best = null;
+      let bestScore = -1;
+      for (const t of present) {
+        let minD = Infinity;
+        for (const c of chosen) {
+          const d = maze.tileDistance(t.x, t.y, c.x, c.y);
+          if (d < minD) minD = d;
+        }
+        // Slight random tiebreak keeps layouts varied.
+        const score = minD + this.rng.next() * 0.5;
+        if (score > bestScore) {
+          bestScore = score;
+          best = t;
+        }
+      }
+      if (!best) break;
+      chosen.push(best);
+    }
+    return chosen.slice(0, count).map((t) => {
+      const c = maze.tileCenter(t.x, t.y);
+      return { x: c.x, y: c.y, rotation: this.rng.range(0, Math.PI * 2) };
+    });
+  }
+}
