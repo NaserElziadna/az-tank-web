@@ -29,14 +29,16 @@ export class GameScreen {
     this._lastBig = null;
   }
 
-  /** @param {string} big @param {string} [sub] */
-  setOverlay(big, sub = '') {
-    if (big !== this._lastBig) {
-      // Re-trigger a subtle pop when the headline changes.
+  /** @param {string} big @param {string} [sub] @param {string} [variant] '', 'count' or 'go' */
+  setOverlay(big, sub = '', variant = '') {
+    if (big !== this._lastBig || variant !== this._lastVariant) {
+      // Re-trigger the pop animation when the headline or style changes.
+      this.overlayBig.className = 'overlay__big' + (variant ? ` ${variant}` : '');
       this.overlayBig.style.animation = 'none';
       void this.overlayBig.offsetWidth;
       this.overlayBig.style.animation = '';
       this._lastBig = big;
+      this._lastVariant = variant;
     }
     this.overlayBig.textContent = big;
     this.overlaySub.textContent = sub;

@@ -154,8 +154,8 @@ export class App {
     const c = this.controller;
     if (c.matchOver) return; // match panel handles it
     if (c.phase === RoundPhase.COUNTDOWN) {
-      if (c.showGo) this.gameScreen.setOverlay('GO!');
-      else this.gameScreen.setOverlay(String(c.countdownValue), `Round ${c.roundNumber}`);
+      if (c.showGo) this.gameScreen.setOverlay('GO!', '', 'go');
+      else this.gameScreen.setOverlay(String(c.countdownValue), `Round ${c.roundNumber}`, 'count');
     } else if (c.phase === RoundPhase.ENDING) {
       const r = c.roundResult;
       if (r && r.winnerSlot != null) {

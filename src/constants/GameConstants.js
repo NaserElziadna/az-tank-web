@@ -94,8 +94,8 @@ export const C = Object.freeze({
     CRATE_SPAWN_VARIANCE: 5.0,
     CRATE_MIN_TILES_TO_TANKS: 4,
     MAX_CRATES: 3,
-    GOLD_SPAWN_MIN: 12.0,
-    GOLD_SPAWN_VARIANCE: 14.0,
+    GOLD_SPAWN_MIN: 20.0,
+    GOLD_SPAWN_VARIANCE: 20.0,
     GOLD_MIN_TILES_TO_TANKS: 5,
     MAX_GOLDS: 3,
     PICKUP_RADIUS: 1.6, // tank picks up a collectible within this distance (m)
@@ -106,7 +106,8 @@ export const C = Object.freeze({
     BETWEEN_ROUNDS_DURATION: 1.0,
     COUNTDOWN_START_VALUE: 3,
     COUNTDOWN_DURATION: 0.5,
-    ROUND_FINISHING_DURATION: 1.6, // brief pause after a winner is decided
+    // Result is shown during ENDING; this also serves as the between-rounds gap.
+    ROUND_FINISHING_DURATION: 2.2,
     GO_DURATION: 0.5,
   }),
 

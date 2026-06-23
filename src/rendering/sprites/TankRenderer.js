@@ -111,10 +111,10 @@ export class TankRenderer {
     ctx.arc(barrelLen, 0, 0.28, 0, Math.PI * 2);
     ctx.fill();
 
-    // ── turret ──
+    // ── turret (sits rear-of-centre so the barrel overhangs the front) ──
     ctx.fillStyle = color.turret;
     ctx.beginPath();
-    ctx.arc(0.05, 0, 0.92, 0, Math.PI * 2);
+    ctx.arc(-0.25, 0, 0.92, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 0.16;
     ctx.strokeStyle = Palette.outline;
@@ -123,7 +123,7 @@ export class TankRenderer {
     ctx.fillStyle = color.hi;
     ctx.globalAlpha = alpha * 0.4;
     ctx.beginPath();
-    ctx.arc(-0.18, -0.2, 0.45, 0, Math.PI * 2);
+    ctx.arc(-0.45, -0.2, 0.45, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = alpha;
 

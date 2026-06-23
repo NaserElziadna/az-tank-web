@@ -9,13 +9,14 @@ import { Difficulty } from '../models/enums.js';
  *  - cleverness:     pathfinding horizon, bounce-shot depth, dodge foresight
  *  - aggressiveness:  fire willingness / how loose an alignment it shoots at
  *  - boldness:        inverse fear — how close danger must be before it flees
- *  - dexterity:       aim precision and reaction speed
+ *  - dexterity:       aim precision and reaction speed (low = shaky + slow)
  *  - greediness:      eagerness to chase weapon crates
+ *  - vengefulness:    how strongly it fixates on whoever keeps killing it
  */
 export const AI_PROFILES = Object.freeze({
-  [Difficulty.EASY]: { cleverness: 0.2, aggressiveness: 0.35, boldness: 0.35, dexterity: 0.3, greediness: 0.4 },
-  medium: { cleverness: 0.55, aggressiveness: 0.6, boldness: 0.55, dexterity: 0.6, greediness: 0.6 },
-  [Difficulty.HARD]: { cleverness: 0.9, aggressiveness: 0.85, boldness: 0.75, dexterity: 0.9, greediness: 0.75 },
+  [Difficulty.EASY]: { cleverness: 0.2, aggressiveness: 0.35, boldness: 0.35, dexterity: 0.28, greediness: 0.4, vengefulness: 0.3 },
+  medium: { cleverness: 0.55, aggressiveness: 0.6, boldness: 0.55, dexterity: 0.62, greediness: 0.6, vengefulness: 0.6 },
+  [Difficulty.HARD]: { cleverness: 0.9, aggressiveness: 0.85, boldness: 0.75, dexterity: 0.92, greediness: 0.75, vengefulness: 0.85 },
 });
 
 /** @param {string} difficulty */

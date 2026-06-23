@@ -42,18 +42,20 @@ export const TANK_COLORS = [
   makeTankColor('Red', '#e14041'),
   makeTankColor('Green', '#17a01a'),
   makeTankColor('Blue', '#0a3bdb'),
-  makeTankColor('Yellow', '#f2c200'),
+  makeTankColor('Yellow', '#f7ef5c'),
   makeTankColor('Orange', '#dc771e'),
   makeTankColor('Magenta', '#bb169f'),
 ];
 
 export const Palette = Object.freeze({
-  arenaBg: '#e9e9e9',
-  arenaShadow: 'rgba(0,0,0,0.06)',
-  wall: '#3a3d44',
-  wallHi: '#4c5059',
-  wallShadow: 'rgba(0,0,0,0.22)',
-  outline: 'rgba(0,0,0,0.82)',
+  // The arena reads light-on-light: near-white floor, mid/light-grey bevelled
+  // walls with a soft drop shadow (matching the reference release).
+  arenaBg: '#edeef0',
+  arenaShadow: 'rgba(0,0,0,0.05)',
+  wall: '#8b8f97',
+  wallHi: '#cdd1d8',
+  wallShadow: 'rgba(0,0,0,0.16)',
+  outline: 'rgba(0,0,0,0.8)',
 
   crate: '#b07a3c',
   crateLight: '#d9a861',

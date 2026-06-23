@@ -181,11 +181,15 @@ export class CollectibleRenderer {
     ctx.lineWidth = 0.16;
     ctx.strokeStyle = Palette.goldDark;
     ctx.stroke();
-    ctx.fillStyle = Palette.goldDark;
-    ctx.font = '700 1.1px "Segoe UI"';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('$', 0, 0.05);
+    // Embossed coin: inner ring + raised centre (no "$").
+    ctx.lineWidth = 0.12;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath();
+    ctx.arc(-r * 0.28, -r * 0.28, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   _diamond(ctx, spin) {

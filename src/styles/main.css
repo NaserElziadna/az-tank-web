@@ -269,6 +269,29 @@ body {
   font-weight: 900;
   color: #fff;
   text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: overlay-pop 0.32s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+/* Countdown identity: red 3-2-1, green GO (matches the original's styling). */
+.overlay__big.count {
+  color: #e21d1d;
+  text-shadow: 0 5px 0 #7a0d0d, 0 12px 26px rgba(0, 0, 0, 0.5);
+}
+.overlay__big.go {
+  color: #3aa017;
+  text-shadow: 0 5px 0 #1c5e0c, 0 12px 26px rgba(0, 0, 0, 0.5);
+}
+@keyframes overlay-pop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 .overlay__sub {
   font-size: 22px;

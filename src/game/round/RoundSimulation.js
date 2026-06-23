@@ -45,6 +45,8 @@ export class RoundSimulation {
     this.collectibles = [];
     /** @type {{points:{x:number,y:number}[], life:number, max:number, colorKey:any}[]} */
     this.beams = [];
+    /** @type {{victim:number, killer:number}[]} recent kills (for AI revenge) */
+    this.killLog = [];
 
     /** @type {Map<number, {think:(dt:number, sim:RoundSimulation)=>any}>} */
     this._controllers = new Map();
@@ -369,6 +371,9 @@ export class RoundSimulation {
   _killTank(tank, killerSlot) {
     if (!tank.alive) return;
     tank.alive = false;
+    // Remember recent kills so AI tanks can target whoever keeps killing them.
+    this.killLog.push({ victim: tank.slot, killer: killerSlot });
+    if (this.killLog.length > 16) this.killLog.shift();
     this.emit('tank:destroyed', {
       slot: tank.slot,
       killerSlot,
@@ -399,6 +404,12 @@ export class RoundSimulation {
   _pickup(c, tank) {
     if (c.category === CollectibleType.WEAPON_CRATE) {
       if (WeaponFactory.isUpgrade(c.kind)) {
+        // Don't consume an upgrade crate the tank already holds (original leaves it).
+        const has =
+          (c.kind === 'shield' && tank.shield) ||
+          (c.kind === 'aimer' && tank.aimer) ||
+          (c.kind === 'speedBoost' && tank.speedBoost);
+        if (has) return false;
         WeaponFactory.applyUpgrade(c.kind, tank);
         return true;
       }
