@@ -79,7 +79,8 @@ export class RoundSimulation {
     tank.position.set(spawn.x, spawn.y);
     tank.prevPosition.copy(tank.position);
     tank.rotation = spawn.rotation;
-    tank.giveShield(true); // brief spawn protection
+    // No spawn shield in last-tank-standing: the 3-2-1 countdown is the buffer,
+    // and no projectiles exist at round start. Shields come only from crates.
     this.tanks.push(tank);
     this._tankBySlot.set(player.slot, tank);
     player.tank = tank;
@@ -282,18 +283,27 @@ export class RoundSimulation {
 
   // ── collisions ─────────────────────────────────────────────────────────
   _resolveProjectileHits() {
+    const shieldR = C.UPGRADES.SHIELD.radius;
+    const halfLen = C.TANK.HEIGHT / 2; // forward axis (local X)
+    const halfWid = C.TANK.WIDTH / 2; // lateral axis (local Y)
+
     for (const p of this.projectiles) {
       if (p.dead) continue;
       for (const tank of this.tanks) {
         if (!tank.alive) continue;
-        const rr = p.radius + C.TANK.COLLISION_RADIUS;
-        if (p.position.distanceToSq(tank.position) > rr * rr) continue;
         if (!p.isDeadlyTo(tank.slot)) continue;
 
         if (tank.hasActiveShield) {
-          // Bounce off the shield instead of dying.
-          let nx = p.position.x - tank.position.x;
-          let ny = p.position.y - tank.position.y;
+          // Shield is a circle around the tank. Your own un-bounced shot passes
+          // straight through your own shield; everything else bounces off it
+          // (and becomes deadly to its owner), so nobody is killed through a shield.
+          const rr = shieldR + p.radius;
+          const dx0 = p.position.x - tank.position.x;
+          const dy0 = p.position.y - tank.position.y;
+          if (dx0 * dx0 + dy0 * dy0 > rr * rr) continue;
+          if (p.ownerSlot === tank.slot && !p.deadlyToOwner) continue; // pass through own shield
+          let nx = dx0;
+          let ny = dy0;
           const len = Math.hypot(nx, ny) || 1;
           nx /= len;
           ny /= len;
@@ -307,9 +317,19 @@ export class RoundSimulation {
           continue;
         }
 
-        this._killTank(tank, p.ownerSlot);
-        if (p.kind !== 'shrapnel') p.destroy();
-        break;
+        // Oriented-box hit test: the tank is 3 m wide x 4 m long, so a shot
+        // along the barrel axis reaches the full 4 m length (not a 3 m circle).
+        const dx = p.position.x - tank.position.x;
+        const dy = p.position.y - tank.position.y;
+        const cos = Math.cos(tank.rotation);
+        const sin = Math.sin(tank.rotation);
+        const lx = dx * cos + dy * sin;
+        const ly = -dx * sin + dy * cos;
+        if (Math.abs(lx) <= halfLen + p.radius && Math.abs(ly) <= halfWid + p.radius) {
+          this._killTank(tank, p.ownerSlot);
+          if (p.kind !== 'shrapnel') p.destroy();
+          break;
+        }
       }
     }
   }
@@ -384,6 +404,8 @@ export class RoundSimulation {
       }
       if (tank.queuedWeaponCount >= C.MAX_WEAPON_QUEUE) return false;
       tank.giveWeapon(WeaponFactory.create(c.kind));
+      // The laser crate comes bundled with a laser-sight aimer in the original.
+      if (c.kind === 'laser') tank.giveAimer();
       return true;
     }
     // Gold / diamond — flair currency; small score handled by GameController.

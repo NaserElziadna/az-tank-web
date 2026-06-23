@@ -80,6 +80,7 @@ export const C = Object.freeze({
     TILE_PROBABILITIES: [0.5, 0.7, 0.9, 0.9, 1.0],
     WALL_PROBABILITIES: [0.5, 0.8, 0.9, 1.0, 1.0],
     MIN_TILES_BETWEEN_TANKS: 4,
+    MIN_TILES_PER_TANK: 5,
     MAX_DEAD_END_PENALTY: 5,
   }),
 

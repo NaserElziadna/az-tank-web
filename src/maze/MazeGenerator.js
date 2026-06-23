@@ -23,29 +23,55 @@ export class MazeGenerator {
    */
   generate(playerCount) {
     const { width, height } = this._dimensions(playerCount);
-    let maze = null;
+    const minTiles = playerCount * C.MAZE.MIN_TILES_PER_TANK;
+    const wantSpacing = C.MAZE.MIN_TILES_BETWEEN_TANKS;
 
-    for (let attempt = 0; attempt < 12; attempt++) {
+    let best = null; // best-effort maze if none fully satisfies spacing
+    let bestSpacing = -1;
+
+    for (let attempt = 0; attempt < 14; attempt++) {
       // Bias later attempts toward fuller grids so we never starve on tiles.
-      const forceFull = attempt >= 8;
+      const forceFull = attempt >= 9;
       const tiles = this._noiseField(width, height, forceFull);
       this._connect(tiles, width, height);
       const present = this._largestComponent(tiles, width, height);
-      if (present.length < Math.max(playerCount * 2, playerCount + 2)) continue;
+      if (present.length < minTiles) continue;
 
-      maze = new Maze(tiles);
+      const maze = new Maze(tiles);
       maze.tankSpawns = this._placeSpawns(maze, present, playerCount);
-      if (maze.tankSpawns.length === playerCount) break;
-      maze = null;
+      if (maze.tankSpawns.length !== playerCount) continue;
+
+      // Original guarantees spawns are at least MIN_TILES_BETWEEN_TANKS apart.
+      const spacing = this._minSpawnSpacing(maze);
+      if (spacing >= wantSpacing) return maze;
+      if (spacing > bestSpacing) {
+        bestSpacing = spacing;
+        best = maze;
+      }
     }
 
-    if (!maze) {
-      // Deterministic fallback: a full open grid always works.
-      const tiles = this._fullGrid(width, height);
-      maze = new Maze(tiles);
-      maze.tankSpawns = this._placeSpawns(maze, maze.reachableTiles(), playerCount);
-    }
+    if (best) return best;
+
+    // Deterministic fallback: a full open grid always works.
+    const tiles = this._fullGrid(width, height);
+    const maze = new Maze(tiles);
+    maze.tankSpawns = this._placeSpawns(maze, maze.reachableTiles(), playerCount);
     return maze;
+  }
+
+  /** Minimum pairwise tile-distance between chosen spawns (Infinity if <2). */
+  _minSpawnSpacing(maze) {
+    const s = maze.tankSpawns;
+    if (s.length < 2) return Infinity;
+    let min = Infinity;
+    for (let i = 0; i < s.length; i++) {
+      for (let j = i + 1; j < s.length; j++) {
+        const a = maze.worldToTile(s[i].x, s[i].y);
+        const b = maze.worldToTile(s[j].x, s[j].y);
+        min = Math.min(min, maze.tileDistance(a.tx, a.ty, b.tx, b.ty));
+      }
+    }
+    return min;
   }
 
   _dimensions(n) {
@@ -55,10 +81,19 @@ export class MazeGenerator {
     let h = Math.max(M.BASE_HEIGHT, M.HEIGHT_FOR_PLAYERS[i]);
     w = Math.round(w * this.rng.range(1, M.MAX_RANDOM_MULTIPLIER));
     h = Math.round(h * this.rng.range(1, M.MAX_RANDOM_MULTIPLIER));
-    return {
-      width: Math.min(w, M.MAX_WIDTH),
-      height: Math.min(h, M.MAX_HEIGHT),
-    };
+    w = Math.min(w, M.MAX_WIDTH);
+    h = Math.min(h, M.MAX_HEIGHT);
+    // Guarantee enough room: the original requires >= MIN_TILES_PER_TANK tiles
+    // per tank, so grow the grid until it can hold them (with a little slack).
+    const needed = n * M.MIN_TILES_PER_TANK + n;
+    let guard = 0;
+    while (w * h < needed && guard++ < 20) {
+      if (w <= h && w < M.MAX_WIDTH) w++;
+      else if (h < M.MAX_HEIGHT) h++;
+      else if (w < M.MAX_WIDTH) w++;
+      else break;
+    }
+    return { width: w, height: h };
   }
 
   /** Steps 1–3 of the spec: wall-seed grid + tile presence → top/left walls. */
