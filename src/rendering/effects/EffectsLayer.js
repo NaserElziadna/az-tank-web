@@ -19,6 +19,31 @@ export class EffectsLayer {
     this._unsub.push(bus.on('mine:tripped', (e) => this._puff(e.x, e.y, 6, '210,40,40', 2)));
     // Collide flare: a small dust puff wherever a projectile hits a wall/shield.
     this._unsub.push(bus.on('projectile:bounce', (e) => this._puff(e.x, e.y, 4, '120,120,120', 1.6)));
+    // Muzzle flash when any weapon fires.
+    this._unsub.push(bus.on('weapon:flash', (e) => this._flash(e.x, e.y)));
+  }
+
+  /** Bright muzzle flash + a wisp of smoke. */
+  _flash(x, y) {
+    this.particles.burst(x, y, 5, { color: '255,235,150', speed: 4, life: 0.12, r0: 0.22, r1: 0.04, alpha0: 0.95, drag: 0.7 });
+    this.particles.burst(x, y, 4, { color: '90,90,90', speed: 2.5, life: 0.35, r0: 0.1, r1: 0.4, alpha0: 0.4, drag: 0.85 });
+  }
+
+  /** Light dust kicked up behind a moving tank's treads. */
+  dust(x, y) {
+    this.particles.spawn({
+      x: x + (rng.next() - 0.5) * 0.4,
+      y: y + (rng.next() - 0.5) * 0.4,
+      vx: (rng.next() - 0.5) * 0.5,
+      vy: (rng.next() - 0.5) * 0.5,
+      life: 0.45,
+      r0: 0.12,
+      r1: 0.5,
+      drag: 0.9,
+      color: '150,150,150',
+      alpha0: 0.28,
+      alpha1: 0,
+    });
   }
 
   /** Grey/black smoke + white flash + coloured debris — the original's style. */
@@ -78,6 +103,23 @@ export class EffectsLayer {
 
   _puff(x, y, n, color, speed) {
     this.particles.burst(x, y, n, { color, speed, life: 0.35, r0: 0.12, r1: 0.4, alpha0: 0.5, drag: 0.8 });
+  }
+
+  /** A faint short streak behind a flying bullet. */
+  bulletTrail(x, y, colorKey) {
+    this.particles.spawn({
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      life: 0.18,
+      r0: 0.16,
+      r1: 0.02,
+      drag: 1,
+      color: colorKey ? hexToRgb(colorKey.base) : '60,60,60',
+      alpha0: 0.3,
+      alpha1: 0,
+    });
   }
 
   /** A drifting smoke puff — called per-frame behind homing missiles. */

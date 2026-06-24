@@ -471,6 +471,7 @@ export class B2Round {
     gameObject.ref = p;
     gameObject.id = p.id;
     this.projectiles.push(p);
+    if (cfg.kind !== 'shrapnel') this.emit('weapon:flash', { x: cfg.pos.x, y: cfg.pos.y });
     return p;
   }
 

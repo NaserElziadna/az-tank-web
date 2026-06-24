@@ -83,8 +83,9 @@ export class MazeGenerator {
       stack.push([x + dx, y + dy]);
     }
 
-    // Braid: knock out extra interior walls for loops + open chambers.
-    const braid = 0.24;
+    // Braid: knock out a few extra interior walls for loops; kept low so the
+    // maze stays dense and "blocky" like the original (mostly single-cell paths).
+    const braid = 0.15;
     for (let x = 0; x < width; x++) {
       for (let y = 0; y < height; y++) {
         if (y > 0 && tiles[x][y][1] === 1 && this.rng.next() < braid) tiles[x][y][1] = 0;

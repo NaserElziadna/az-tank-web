@@ -96,11 +96,19 @@ export class PhaserRenderer {
         // so they're wrong here. Render the clean top-down vector tank instead.
         this.tankR.draw(ctx, this._tankView(tank, round, alpha), 1);
       }
-      // Homing missiles leave a black smoke trail.
+      // Trails: missiles smoke; main bullets leave a faint coloured streak.
       for (const p of round.projectiles) {
-        if (p.kind === 'homing' && p.activated) {
-          this.effects.trail(lerp(p.prevPosition.x, p.position.x, alpha), lerp(p.prevPosition.y, p.position.y, alpha));
-        }
+        const px = lerp(p.prevPosition.x, p.position.x, alpha);
+        const py = lerp(p.prevPosition.y, p.position.y, alpha);
+        if (p.kind === 'homing' && p.activated) this.effects.trail(px, py);
+        else if (p.kind === 'bullet' || p.kind === 'double') this.effects.bulletTrail(px, py, p.colorKey);
+      }
+      // Dust kicked up behind moving tanks (the original's tread effect).
+      for (const tank of round.tanks) {
+        if (!tank.alive || !tank.velocity || tank.velocity.lengthSq() < 9) continue;
+        const tx = lerp(tank.prevPosition.x, tank.position.x, alpha) - Math.cos(tank.rotation) * 1.7;
+        const ty = lerp(tank.prevPosition.y, tank.position.y, alpha) - Math.sin(tank.rotation) * 1.7;
+        this.effects.dust(tx, ty);
       }
       this.projR.draw(ctx, round.projectiles, round.beams, alpha);
       this.effects.render(ctx);

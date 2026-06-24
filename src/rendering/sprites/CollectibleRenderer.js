@@ -71,15 +71,15 @@ export class CollectibleRenderer {
     ctx.fillStyle = 'rgba(0,0,0,0.16)';
     this._round(ctx, -h + 0.14, -h + 0.2, s, s, 0.4);
     ctx.fill();
-    // light box body
-    ctx.fillStyle = '#f1f1f3';
+    // light-grey box body (matches the original's pale crates)
+    ctx.fillStyle = '#d7d8db';
     this._round(ctx, -h, -h, s, s, 0.4);
     ctx.fill();
     // top highlight + bottom shade for a subtle 3D edge
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
     this._round(ctx, -h + 0.16, -h + 0.14, s - 0.32, s * 0.3, 0.3);
     ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
     this._round(ctx, -h + 0.16, h * 0.12, s - 0.32, s * 0.34, 0.3);
     ctx.fill();
     // dark rounded border
