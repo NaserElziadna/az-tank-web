@@ -2,6 +2,8 @@ import { el, clear } from './dom.js';
 import { colorForSlot } from '../rendering/Palette.js';
 import { schemeForSlot } from '../core/input/ControlSchemes.js';
 import { ControllerType, Difficulty } from '../models/enums.js';
+import { AssetStore } from '../phaser/AssetStore.js';
+import { TankIconCompositor } from '../phaser/TankIconCompositor.js';
 
 const MAX_HUMANS = 4;
 
@@ -21,6 +23,13 @@ export class SetupScreen {
       pointsToWin: 5,
       players: this._defaultPlayers(2),
     };
+
+    // Load the real tank-part art for the garage-style previews (the 3/4 icon
+    // belongs here, like the original's control-select screen). Re-render when
+    // it arrives; falls back to a colour swatch if the files aren't present.
+    this.assets = new AssetStore();
+    this.compositor = new TankIconCompositor(this.assets);
+    this.assets.load(320).then(() => this._renderPlayers());
 
     this.grid = el('div.players');
     this.root = el('div.screen.setup', {}, [
@@ -91,13 +100,36 @@ export class SetupScreen {
     this.state.players.forEach((p, i) => this.grid.appendChild(this._card(p, i)));
   }
 
+  /** Paint the composited 3/4 garage tank (tinted) into a card canvas. */
+  _paintTank(canvas, color) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const tank = this.compositor.get(color);
+    if (tank) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(tank, 0, 0, canvas.width, canvas.height);
+    } else {
+      // Fallback swatch until the art loads (or if it's absent).
+      ctx.fillStyle = color.base;
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, canvas.height / 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   _card(p, slot) {
     const color = colorForSlot(slot);
     const scheme = schemeForSlot(slot);
 
-    const swatch = el('div.player-card__swatch', { style: { background: color.base } }, [
-      el('span', { style: { fontSize: '30px' }, text: '🛡' }),
-    ]);
+    // Garage tank preview: paint the real 3/4 tank icon (tinted) when loaded,
+    // else a plain colour swatch.
+    const iconCanvas = el('canvas', {
+      width: '150',
+      height: '90',
+      style: { width: '120px', height: '72px' },
+    });
+    this._paintTank(iconCanvas, color);
+    const swatch = el('div.player-card__swatch', { style: { background: 'transparent', width: 'auto', height: 'auto' } }, [iconCanvas]);
 
     const typeChips = el('div.player-card__type', {}, [
       this._chip('Human', p.controller === ControllerType.HUMAN, () => {

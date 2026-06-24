@@ -33,8 +33,15 @@ export class HudRenderer {
       ctx.font = '700 15px "Segoe UI", sans-serif';
       this._strokedText(ctx, p.name, cx, y - 40, '#fff');
 
-      // tank icon (facing up)
-      this._icon(ctx, cx, y - 4, 0.46, p.color);
+      // tank icon — real 3/4 garage art if loaded, else the vector icon
+      const sprite = opts.compositor && opts.compositor.get(p.color);
+      if (sprite) {
+        const iw = 88;
+        const ih = iw * (sprite.height / sprite.width);
+        ctx.drawImage(sprite, cx - iw / 2, y - 4 - ih / 2, iw, ih);
+      } else {
+        this._icon(ctx, cx, y - 4, 0.46, p.color);
+      }
 
       // score
       ctx.font = '800 26px "Segoe UI", sans-serif';

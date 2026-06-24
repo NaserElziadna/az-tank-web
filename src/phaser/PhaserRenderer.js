@@ -115,7 +115,7 @@ export class PhaserRenderer {
           activeWeapons.set(p.slot, `${weaponName(wpn.type)} ${wpn.hudLabel()}`.trim());
         }
       }
-      this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons });
+      this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons, compositor: this.compositor });
     }
 
     this._overlay(ctx, match, w, h);
