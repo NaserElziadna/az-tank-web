@@ -51,6 +51,8 @@ export const Palette = Object.freeze({
   // The arena reads light-on-light: near-white floor, mid/light-grey bevelled
   // walls with a soft drop shadow (matching the reference release).
   arenaBg: '#edeef0',
+  floorA: '#ececed',
+  floorB: '#e3e4e7',
   arenaShadow: 'rgba(0,0,0,0.05)',
   wall: '#8b8f97',
   wallHi: '#cdd1d8',

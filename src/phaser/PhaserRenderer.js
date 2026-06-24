@@ -20,7 +20,9 @@ const HUD_HEIGHT = 104;
  */
 const SPRITE = {
   rotationOffset: Math.PI / 2, // icon art faces "up"; forward is +X
-  lengthScale: 1.15, // icon's longer side ≈ TANK.HEIGHT * this (metres)
+  lengthScale: 1.95, // icon's longer side ≈ TANK.HEIGHT * this (metres); part PNGs
+  // carry transparent padding, so this overshoots the 4 m hull to fill the cell
+  // like the original. Lower it if tanks look too big.
 };
 
 /**

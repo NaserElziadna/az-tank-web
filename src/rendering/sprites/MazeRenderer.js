@@ -1,10 +1,14 @@
 import { Palette } from '../Palette.js';
+import { C } from '../../constants/GameConstants.js';
+
+const TILE = C.MAZE.TILE_SIZE;
 
 /**
- * Renders the arena: a light floor and dark, rounded wall slabs with a soft
- * drop shadow — the clean, recognisable top-down maze look. Walls are the same
- * axis-aligned rectangles the physics uses, drawn with rounded corners so the
- * merged runs read as continuous bars.
+ * Renders the arena: a light floor with the original's faint checkerboard tiles,
+ * and light-grey rounded wall slabs with a soft drop shadow — the clean,
+ * recognisable top-down maze look. Walls are the same axis-aligned rectangles
+ * the physics uses, drawn with rounded corners so the merged runs read as
+ * continuous bars.
  */
 export class MazeRenderer {
   /**
@@ -12,9 +16,18 @@ export class MazeRenderer {
    * @param {import('../../maze/Maze.js').Maze} maze
    */
   draw(ctx, maze) {
-    // Floor.
+    // Floor base.
     ctx.fillStyle = Palette.arenaBg;
     ctx.fillRect(0, 0, maze.worldWidth, maze.worldHeight);
+
+    // Faint checkerboard per tile (matches the original's floor).
+    for (let x = 0; x < maze.width; x++) {
+      for (let y = 0; y < maze.height; y++) {
+        if (!maze.present(x, y)) continue;
+        ctx.fillStyle = (x + y) % 2 === 0 ? Palette.floorA : Palette.floorB;
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
 
     // Subtle inner vignette so the play-field has depth.
     ctx.save();
