@@ -53,7 +53,7 @@ export class SetupScreen {
     for (let i = 0; i < count; i++) {
       players.push({
         controller: i === 0 ? ControllerType.HUMAN : ControllerType.AI,
-        difficulty: 'medium',
+        difficulty: Difficulty.MEDIUM,
         name: i === 0 ? 'You' : `CPU ${i}`,
       });
     }
@@ -88,7 +88,7 @@ export class SetupScreen {
     const players = this.state.players.slice(0, count);
     while (players.length < count) {
       const i = players.length;
-      players.push({ controller: ControllerType.AI, difficulty: 'medium', name: `CPU ${i}` });
+      players.push({ controller: ControllerType.AI, difficulty: Difficulty.MEDIUM, name: `CPU ${i}` });
     }
     this.state.count = count;
     this.state.players = players;
@@ -146,8 +146,9 @@ export class SetupScreen {
       p.controller === ControllerType.AI
         ? el('div.player-card__type', {}, [
             this._chip('Easy', p.difficulty === Difficulty.EASY, () => this._setDiff(p, Difficulty.EASY)),
-            this._chip('Med', p.difficulty === 'medium', () => this._setDiff(p, 'medium')),
+            this._chip('Med', p.difficulty === Difficulty.MEDIUM, () => this._setDiff(p, Difficulty.MEDIUM)),
             this._chip('Hard', p.difficulty === Difficulty.HARD, () => this._setDiff(p, Difficulty.HARD)),
+            this._chip('Lethal', p.difficulty === Difficulty.LETHAL, () => this._setDiff(p, Difficulty.LETHAL)),
           ])
         : el('div.player-card__keys', {}, [
             el('div', { text: `Move: ${scheme.labels.move}` }),

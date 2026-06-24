@@ -1,6 +1,6 @@
 import Phaser from './phaserLib.js';
 import { Player } from '../models/Player.js';
-import { ControllerType } from '../models/enums.js';
+import { ControllerType, Difficulty } from '../models/enums.js';
 import { colorForSlot, Palette } from '../rendering/Palette.js';
 import { schemeForSlot } from '../core/input/ControlSchemes.js';
 import { B2Match } from './B2Match.js';
@@ -66,6 +66,10 @@ export class PhaserGame {
     const players = [];
     const humanControllers = new Map();
     for (const pc of this.setup.players) {
+      // A tank is "lethal" via the boss-mode flag OR by picking Lethal difficulty.
+      // Only the dedicated boss wears the dark skin; difficulty-Lethal AIs keep
+      // their slot colour (so multiple are distinguishable) + the lethal extras.
+      const isLethal = !!pc.lethal || pc.difficulty === Difficulty.LETHAL;
       const color = pc.lethal ? Palette.lethalTank : colorForSlot(pc.slot);
       let controls = null;
       if (pc.controller === ControllerType.HUMAN) {
@@ -74,7 +78,7 @@ export class PhaserGame {
         humanControllers.set(pc.slot, { think: () => this._readHuman(controls, usesTouch) });
       }
       players.push(
-        new Player({ slot: pc.slot, name: pc.name, controller: pc.controller, color, controls, difficulty: pc.difficulty, lethal: pc.lethal }),
+        new Player({ slot: pc.slot, name: pc.name, controller: pc.controller, color, controls, difficulty: pc.difficulty, lethal: isLethal }),
       );
     }
 

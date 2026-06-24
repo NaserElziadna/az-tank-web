@@ -41,6 +41,7 @@ export class ShotgunWeapon extends Weapon {
         radius: CFG.radius,
         maxLifetime: CFG.maxLifetime,
         lifetimeAfterHit: CFG.lifetimeAfterHit,
+        damage: CFG.damage,
       });
     }
     sim.emit('weapon:fire', { weapon: 'shotgun' });

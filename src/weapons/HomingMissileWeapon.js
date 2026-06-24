@@ -30,6 +30,7 @@ export class HomingMissileWeapon extends Weapon {
       homing: true,
       activationTime: CFG.activationTime,
       deadlyToOwner: false,
+      damage: CFG.damage,
     });
     sim.emit('weapon:fire', { weapon: 'homing' });
   }

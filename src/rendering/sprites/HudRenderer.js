@@ -47,6 +47,23 @@ export class HudRenderer {
       ctx.font = '800 26px "Segoe UI", sans-serif';
       this._strokedText(ctx, String(p.score), cx + 40, y - 2, '#fff', 4);
 
+      // health bar (live tanks only)
+      if (p.tank && p.tank.alive && p.tank.maxHp) {
+        const frac = Math.max(0, p.tank.hp / p.tank.maxHp);
+        const bw = 58;
+        const bh = 6;
+        const bx = cx - bw / 2;
+        const by = y + 16;
+        ctx.globalAlpha = alive ? 1 : 0.4;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = frac > 0.5 ? '#4caf50' : frac > 0.25 ? '#e0b341' : '#d23b3b';
+        ctx.fillRect(bx, by, bw * frac, bh);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.strokeRect(bx, by, bw, bh);
+      }
+
       // weapon (human only)
       const weapon = opts.activeWeapons && opts.activeWeapons.get(p.slot);
       if (weapon) {

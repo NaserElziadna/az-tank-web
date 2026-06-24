@@ -213,6 +213,24 @@ export class TankRenderer {
     }
   }
 
+  /** A small health bar above the tank — only shown once damaged. */
+  drawHealth(ctx, t, hp, maxHp) {
+    if (hp == null || maxHp == null || hp >= maxHp) return;
+    const w = 2.2;
+    const h = 0.34;
+    const x = t.x - w / 2;
+    const y = t.y - 2.05;
+    const frac = Math.max(0, hp / maxHp);
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    this._roundRect(ctx, x - 0.06, y - 0.06, w + 0.12, h + 0.12, 0.12);
+    ctx.fill();
+    ctx.fillStyle = frac > 0.5 ? '#4caf50' : frac > 0.25 ? '#e0b341' : '#d23b3b';
+    this._roundRect(ctx, x, y, Math.max(0.001, w * frac), h, 0.1);
+    ctx.fill();
+    ctx.restore();
+  }
+
   /** Draw a tank's name + a small position marker (for the in-arena label). */
   drawName(ctx, t, name) {
     ctx.save();

@@ -35,6 +35,7 @@ export class DoubleBarrelWeapon extends Weapon {
         speed: CFG.speed,
         radius: CFG.radius,
         maxLifetime: CFG.maxLifetime,
+        damage: CFG.damage,
       });
     }
     sim.emit('weapon:fire', { weapon: 'double' });

@@ -33,6 +33,8 @@ export class EffectsLayer {
     this._unsub.push(bus.on('projectile:bounce', (e) => this._puff(e.x, e.y, 4, '120,120,120', 1.6)));
     // Dust kicked up when a tank drives into a wall.
     this._unsub.push(bus.on('tank:bump', (e) => this._puff(e.x, e.y, 8, '170,165,155', 2.4)));
+    // Spark when a tank takes (non-fatal) damage.
+    this._unsub.push(bus.on('tank:damaged', (e) => this._puff(e.x, e.y, 7, '255,228,120', 3.2)));
     // Muzzle flash when any weapon fires.
     this._unsub.push(bus.on('weapon:flash', (e) => this._flash(e.x, e.y)));
   }

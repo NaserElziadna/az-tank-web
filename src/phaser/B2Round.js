@@ -37,6 +37,9 @@ class B2Tank {
     // Lethal tank: keeps more bullets in the air and has a permanent aimer.
     this.bulletCap = this.lethal ? C.LETHAL.bulletCap : C.WEAPONS.BULLET.ammo;
     this.aimer = this.lethal ? { time: Infinity, length: C.UPGRADES.AIMER.length } : null;
+    // Health: tanks now take damage instead of dying in one hit.
+    this.maxHp = this.lethal ? C.HEALTH.lethal : C.HEALTH.normal;
+    this.hp = this.maxHp;
     this.locked = false;
     this.alive = true;
     this.stuck = false;
@@ -87,19 +90,9 @@ class B2Tank {
       this.body.SetAngularVelocity(angVel);
       if (intent.drive !== 0) {
         const speed = (intent.drive > 0 ? C.TANK.FORWARD_SPEED : -C.TANK.BACK_SPEED) * this.speedModifier;
-        let vx = Math.cos(this.rotation) * speed;
-        let vy = Math.sin(this.rotation) * speed;
-        // Wall-slide: if we're pushing into a wall, strip the into-wall component
-        // so the tank slides along it instead of dead-stopping (no need to reverse).
-        const wn = sim.b2.tankWallNormal.get(this.slot);
-        if (wn) {
-          const dot = vx * wn.x + vy * wn.y; // <0 means driving into the wall
-          if (dot < 0) {
-            vx -= dot * wn.x;
-            vy -= dot * wn.y;
-          }
-        }
-        this.body.SetLinearVelocity(Box2DWorld.vec(vx, vy));
+        // Drive straight along the facing; the circular collider lets Box2D slide
+        // the tank along any wall it contacts (and stop head-on) on its own.
+        this.body.SetLinearVelocity(Box2DWorld.vec(Math.cos(this.rotation) * speed, Math.sin(this.rotation) * speed));
         drive = intent.drive;
       } else {
         this.body.SetLinearVelocity(Box2DWorld.vec(0, 0));
@@ -151,6 +144,7 @@ class B2Projectile {
     this.ownerSlot = cfg.ownerSlot;
     this.colorKey = cfg.colorKey;
     this.radius = cfg.radius;
+    this.damage = cfg.damage ?? 1;
     this.maxLifetime = cfg.maxLifetime;
     this.timeAlive = 0;
     this.constantSpeed = cfg.constantSpeed ?? true;
@@ -293,6 +287,7 @@ class B2Mine {
         stopsOnWall: true,
         drag: 0.04,
         deadlyToOwner: true,
+        damage: cfg.shrapnelDamage,
       });
     }
     sim.emit('mine:detonated', { x: this.position.x, y: this.position.y });
@@ -475,8 +470,23 @@ export class B2Round {
       p.deadlyToOwner = true;
       return;
     }
-    this._killTank(tank, p.ownerSlot);
+    this._damageTank(tank, p.damage, p.ownerSlot);
     if (p.kind !== 'shrapnel') p.destroy(this);
+  }
+
+  /** Apply damage; kill only when HP runs out. */
+  _damageTank(tank, amount, killerSlot) {
+    if (!tank.alive) return;
+    tank.hp -= amount;
+    this.emit('tank:damaged', {
+      slot: tank.slot,
+      x: tank.position.x,
+      y: tank.position.y,
+      colorKey: tank.colorKey,
+      hp: Math.max(0, tank.hp),
+      maxHp: tank.maxHp,
+    });
+    if (tank.hp <= 0) this._killTank(tank, killerSlot);
   }
 
   _killTank(tank, killerSlot) {
@@ -537,7 +547,7 @@ export class B2Round {
     const trace = this.physics.tracePath(muzzle.x, muzzle.y, angle, { maxBounces: 6, maxLength: 200, radius: 0, tanks: tanksView, ignoreTankId: tank.slot });
     if (trace.hitTank) {
       const victim = this.getTank(trace.hitTank.id);
-      if (victim && !victim.hasActiveShield) this._killTank(victim, tank.slot);
+      if (victim && !victim.hasActiveShield) this._damageTank(victim, cfg.damage, tank.slot);
     }
     this.beams.push({ points: trace.points, life: cfg.maxLifetime, max: cfg.maxLifetime, colorKey: tank.colorKey });
   }

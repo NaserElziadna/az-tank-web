@@ -117,6 +117,7 @@ export class PhaserRenderer {
         if (!tank.alive) continue;
         const x = lerp(tank.prevPosition.x, tank.position.x, alpha);
         const y = lerp(tank.prevPosition.y, tank.position.y, alpha);
+        this.tankR.drawHealth(ctx, { x, y }, tank.hp, tank.maxHp);
         this.tankR.drawName(ctx, { x, y }, tank.player.name);
       }
       ctx.restore();
@@ -293,6 +294,8 @@ export class PhaserRenderer {
       rotation: rot,
       color: tank.colorKey,
       lethal: tank.lethal,
+      hp: tank.hp,
+      maxHp: tank.maxHp,
       spawnAnim: tank.spawnAnim ?? 1,
       treadOffset: tank.treadOffset,
       shield: tank.shield ? { ratio: tank.shield.time / C.UPGRADES.SHIELD.lifetime } : null,

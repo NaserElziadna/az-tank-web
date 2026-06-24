@@ -36,26 +36,32 @@ export const C = Object.freeze({
   // ── Weapons ───────────────────────────────────────────────────────────────
   // speeds m/s, radii m, lifetimes s, offsets m.
   WEAPONS: Object.freeze({
-    BULLET: { radius: 0.25, speed: 18, offset: 2.5, ammo: 5, maxLifetime: 10 },
-    LASER: { radius: 0, speed: 180, offset: 2.5, lockTime: 0.2, maxLifetime: 0.8, width: 0.2, aimerLength: 60, ammo: 1 },
-    DOUBLE_BARREL: { radius: 0.25, speed: 18, offset: 2.25, space: 0.45, ammo: 10, reload: 1.0, maxLifetime: 6 },
+    BULLET: { radius: 0.25, speed: 18, offset: 2.5, ammo: 5, maxLifetime: 10, damage: 1 },
+    LASER: { radius: 0, speed: 180, offset: 2.5, lockTime: 0.2, maxLifetime: 0.8, width: 0.2, aimerLength: 60, ammo: 1, damage: 3 },
+    DOUBLE_BARREL: { radius: 0.25, speed: 18, offset: 2.25, space: 0.45, ammo: 10, reload: 1.0, maxLifetime: 6, damage: 1 },
     SHOTGUN: {
       radius: 0.1, speedMin: 30, speedMax: 35, offset: 2.45, space: 0.4,
       ammo: 3, reload: 1.0, maxLifetime: 2, lifetimeAfterHit: 0.7,
-      pellets: 20, spread: 0.3,
+      pellets: 20, spread: 0.3, damage: 0.5,
     },
     GATLING: {
       radius: 0.1, speedMin: 25, speedMax: 30, offset: 3.0, space: 0.4,
       ammo: 20, chargeTime: 0.5, fireRate: 0.12, dischargeTime: 1.5,
-      maxLifetime: 2, spread: 0.1,
+      maxLifetime: 2, spread: 0.1, damage: 0.25,
     },
-    HOMING: { radius: 0.38, speed: 17, offset: 2.5, accel: 42, activationTime: 1.1, maxLifetime: 10, ammo: 1 },
+    HOMING: { radius: 0.38, speed: 17, offset: 2.5, accel: 42, activationTime: 1.1, maxLifetime: 10, ammo: 1, damage: 2 },
     MINE: {
       bodyRadius: 0.8, launchSpeed: 6.0, offset: -1.45, ammo: 1,
       activationDelay: 0.5, detonationDelay: 0.4,
       shrapnel: 30, shrapnelRadius: 0.1, shrapnelSpeedMin: 25, shrapnelSpeedMax: 35,
-      triggerRadius: 2.8,
+      triggerRadius: 2.8, shrapnelDamage: 0.5,
     },
+  }),
+
+  // ── Health (tanks take damage now instead of dying in one hit) ──────────────
+  HEALTH: Object.freeze({
+    normal: 3,
+    lethal: 5,
   }),
 
   // ── Upgrades ──────────────────────────────────────────────────────────────

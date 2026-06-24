@@ -53,11 +53,16 @@ export class AIController {
     if (this.releaseFrames > 0) this.releaseFrames--;
     this._updateAimWobble(dt);
 
-    // Unstuck overrides everything for a short burst.
+    // Unstuck overrides everything for a short burst: hard reverse + full spin so
+    // the tank actually breaks free of a wedge (a gentle nudge just re-wedges it).
+    // Alternate the spin direction over time so it doesn't reverse into the wall
+    // behind it forever.
     if (tank.stuck) this.unstuckTimer = 0.45;
     if (this.unstuckTimer > 0) {
       this.unstuckTimer -= dt;
-      return { drive: -1, turn: this.slot % 2 === 0 ? 1 : -1, fire: false, firePressed: false };
+      this._unstuckFlip = (this._unstuckFlip || 0) + dt;
+      const dir = (this.slot % 2 === 0 ? 1 : -1) * (Math.floor(this._unstuckFlip / 0.5) % 2 === 0 ? 1 : -1);
+      return { drive: -1, turn: dir, fire: false, firePressed: false };
     }
 
     const myTile = sim.maze.worldToTile(tank.position.x, tank.position.y);
@@ -80,7 +85,7 @@ export class AIController {
     const aliveEnemies = sim.tanks.filter((o) => o.slot !== this.slot && o.alive);
     const allShielded = aliveEnemies.length > 0 && aliveEnemies.every((o) => o.hasActiveShield);
     const bulletsDry =
-      tank.activeWeapon.type === 'normal' && sim.liveProjectileCount(this.slot, 'bullet') >= C.WEAPONS.BULLET.ammo;
+      tank.activeWeapon.type === 'normal' && sim.liveProjectileCount(this.slot, 'bullet') >= (tank.bulletCap ?? C.WEAPONS.BULLET.ammo);
     if ((allShielded || bulletsDry) && !wantCrate) {
       const fleeFrom = aliveEnemies.length ? this._nearestOf(tank, sim, aliveEnemies) : null;
       if (fleeFrom) {
@@ -94,13 +99,21 @@ export class AIController {
       }
     }
 
-    // 4. Attack with a firing solution.
+    // 4. Attack with a firing solution — but only stand-and-fire / charge when we
+    // have a clear line of sight (or the enemy is close). A blind long-range bounce
+    // shot must NOT make us drive straight into the wall between us; in that case we
+    // fall through to HUNT and pathfind around instead of ramming and oscillating.
     const aim = enemy ? this._aimSolution(tank, sim, enemy.tank) : null;
     if (aim && aim.fireReady) {
-      this.goal = 'attack';
-      const intent = { drive: 0, turn: this._aimTurn(tank, aim.angle), fire: false, firePressed: false };
-      if (enemy.worldDist > 15 && Math.abs(wrapAngle(aim.angle - tank.rotation)) < 0.4) intent.drive = 0.5;
-      return this._tryFire(tank, intent, dt, aim);
+      const los = enemy && sim.physics.lineOfSight(tank.position.x, tank.position.y, enemy.tank.position.x, enemy.tank.position.y);
+      if (los || enemy.worldDist < 12) {
+        this.goal = 'attack';
+        const intent = { drive: 0, turn: this._aimTurn(tank, aim.angle), fire: false, firePressed: false };
+        // Only charge forward when the lane is actually open (LOS) — never blind.
+        if (los && enemy.worldDist > 14) intent.drive = 1;
+        else if (los && enemy.worldDist > 8) intent.drive = 0.5;
+        return this._tryFire(tank, intent, dt, aim);
+      }
     }
     this.reactionTimer = this.t.lethal ? 0 : lerpTrait(0.3, 0, this.t.dexterity); // reset when no shot
 
@@ -324,7 +337,7 @@ export class AIController {
 
   _follow(tank, sim, targetTile, myTile) {
     if (this.repathTimer <= 0 || this.path.length === 0) {
-      this.repathTimer = 0.3;
+      this.repathTimer = this.t.lethal ? 0.15 : 0.3; // lethal re-plans twice as often → tracks moving prey
       const threatWeight = lerpTrait(0.1, 1.2, this.t.cleverness);
       this.path = this._shortest(
         sim,
@@ -385,7 +398,10 @@ export class AIController {
     while (this.path.length) {
       const wp = this.path[0];
       const c = sim.maze.tileCenter(wp.x, wp.y);
-      if (tank.position.distanceToSq(c) < 9) this.path.shift();
+      // 2.6m reach radius — advance the waypoint a bit early so a 4m-long tank
+      // doesn't have to fully center on each tile (which causes corner wedging),
+      // but not so early it cuts corners into walls.
+      if (tank.position.distanceToSq(c) < 6.76) this.path.shift();
       else break;
     }
   }
@@ -394,21 +410,25 @@ export class AIController {
     const jitter = (rng.next() - 0.5) * lerpTrait(0.3, 0, this.t.dexterity);
     const desired = Math.atan2(ty - tank.position.y, tx - tank.position.x) + jitter;
     const dist = Math.hypot(tx - tank.position.x, ty - tank.position.y);
-    const dead = 0.12;
+    const dead = 0.1;
+    // Graded turn (proportional, not full-lock) → smooth steering, less overshoot.
+    // Only drive once roughly facing the waypoint (~57°); driving while more
+    // off-axis makes the long tank ram corridor walls sideways in the tight maze.
+    const driveGate = 1.0;
 
     const err = wrapAngle(desired - tank.rotation);
     if (canReverse && Math.abs(err) > Math.PI * 0.62) {
       const rev = wrapAngle(desired + Math.PI - tank.rotation);
       return {
-        drive: Math.abs(rev) < 0.9 && dist > 1 ? -1 : 0,
-        turn: Math.abs(rev) > dead ? Math.sign(rev) : 0,
+        drive: Math.abs(rev) < 1.0 && dist > 1 ? -1 : 0,
+        turn: Math.abs(rev) > dead ? clamp(rev * 2, -1, 1) : 0,
         fire: false,
         firePressed: false,
       };
     }
     return {
-      drive: Math.abs(err) < 0.9 && dist > 1 ? 1 : 0,
-      turn: Math.abs(err) > dead ? Math.sign(err) : 0,
+      drive: Math.abs(err) < driveGate && dist > 1 ? 1 : 0,
+      turn: Math.abs(err) > dead ? clamp(err * 2, -1, 1) : 0,
       fire: false,
       firePressed: false,
     };
@@ -416,11 +436,15 @@ export class AIController {
 
   _aimTurn(tank, aimAngle) {
     const err = wrapAngle(aimAngle - tank.rotation);
-    return Math.abs(err) > 0.04 ? clamp(err * 3, -1, 1) : 0;
+    // Gentler gain (×1.5, was ×3) so aiming no longer yanks the tank off its path.
+    return Math.abs(err) > 0.04 ? clamp(err * 1.5, -1, 1) : 0;
   }
 
-  _blendTurn(a, b) {
-    return b !== 0 ? b : a;
+  /** Blend path-following turn with aim turn so the tank moves AND aims together
+   *  instead of abandoning its path to snap the barrel. */
+  _blendTurn(pathTurn, aimTurn) {
+    if (Math.abs(aimTurn) < 0.2) return pathTurn; // nearly lined up → keep steering
+    return aimTurn * 0.75 + pathTurn * 0.25;
   }
 }
 

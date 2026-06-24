@@ -40,6 +40,7 @@ export class GatlingWeapon extends Weapon {
       speed: rng.range(CFG.speedMin, CFG.speedMax),
       radius: CFG.radius,
       maxLifetime: CFG.maxLifetime,
+      damage: CFG.damage,
     });
     sim.emit('weapon:fire', { weapon: 'gatling' });
   }
