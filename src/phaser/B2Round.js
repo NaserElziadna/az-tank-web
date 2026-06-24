@@ -181,6 +181,7 @@ class B2Projectile {
     if (sim.b2.bounced.has(this.id)) {
       this.deadlyToOwner = true;
       this._bounceTimes.push(this.timeAlive);
+      sim.emit('projectile:bounce', { x: this.position.x, y: this.position.y }); // collide flare + SFX
       if (this.lifetimeAfterHit != null) this.maxLifetime = Math.min(this.maxLifetime, this.timeAlive + this.lifetimeAfterHit);
       if (this.stopsOnWall) {
         this.body.SetLinearVelocity(Box2DWorld.vec(0, 0));

@@ -96,6 +96,12 @@ export class PhaserRenderer {
         // so they're wrong here. Render the clean top-down vector tank instead.
         this.tankR.draw(ctx, this._tankView(tank, round, alpha), 1);
       }
+      // Homing missiles leave a black smoke trail.
+      for (const p of round.projectiles) {
+        if (p.kind === 'homing' && p.activated) {
+          this.effects.trail(lerp(p.prevPosition.x, p.position.x, alpha), lerp(p.prevPosition.y, p.position.y, alpha));
+        }
+      }
       this.projR.draw(ctx, round.projectiles, round.beams, alpha);
       this.effects.render(ctx);
       for (const tank of round.tanks) {

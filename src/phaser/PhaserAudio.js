@@ -21,6 +21,7 @@ export class PhaserAudio {
     };
     this._unsub = [
       bus.on('weapon:fire', (e) => this.play(e?.weapon === 'shotgun' ? 'shotgun' : 'shot')),
+      bus.on('projectile:bounce', () => this.play('bounce')),
       bus.on('tank:destroyed', () => this.play('explosion')),
       bus.on('mine:detonated', () => this.play('explosion')),
       bus.on('collectible:picked', () => this.play('pickup')),

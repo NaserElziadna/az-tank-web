@@ -3,54 +3,98 @@ import { rng } from '../../core/math/Random.js';
 
 /**
  * Visual effects layer: owns a {@link ParticleSystem} and listens on the event
- * bus for gameplay moments (a tank exploding, a mine detonating, a weapon
- * firing) to spawn smoke, debris and flame bursts. Decoupled from the sim — it
- * only reacts to events, so gameplay never depends on visuals.
+ * bus for gameplay moments to spawn particles. Matches the original's look —
+ * explosions are grey/black **smoke** with a brief white flash (not orange
+ * fireballs), wall hits puff light dust (the "collide flare"), and homing
+ * missiles leave a black smoke trail. Decoupled from the sim — it only reacts to
+ * events, so gameplay never depends on visuals.
  */
 export class EffectsLayer {
   /** @param {import('../../core/events/EventBus.js').EventBus} bus */
   constructor(bus) {
-    this.particles = new ParticleSystem(900);
+    this.particles = new ParticleSystem(1200);
     this._unsub = [];
     this._unsub.push(bus.on('tank:destroyed', (e) => this._explosion(e.x, e.y, e.colorKey)));
-    this._unsub.push(bus.on('mine:detonated', (e) => this._explosion(e.x, e.y, null, 0.7)));
-    this._unsub.push(bus.on('mine:tripped', (e) => this.particles.burst(e.x, e.y, 6, { color: '210,40,40', speed: 2, life: 0.3 })));
+    this._unsub.push(bus.on('mine:detonated', (e) => this._explosion(e.x, e.y, null, 0.8)));
+    this._unsub.push(bus.on('mine:tripped', (e) => this._puff(e.x, e.y, 6, '210,40,40', 2)));
+    // Collide flare: a small dust puff wherever a projectile hits a wall/shield.
+    this._unsub.push(bus.on('projectile:bounce', (e) => this._puff(e.x, e.y, 4, '120,120,120', 1.6)));
   }
 
+  /** Grey/black smoke + white flash + coloured debris — the original's style. */
   _explosion(x, y, colorKey, scale = 1) {
-    // dark smoke
-    this.particles.burst(x, y, Math.round(26 * scale), {
-      color: '60,60,60',
-      speed: 6 * scale,
-      life: 0.9,
-      r0: 0.25,
-      r1: 1.1 * scale,
-      alpha0: 0.6,
-      drag: 0.84,
-    });
-    // bright core
-    this.particles.burst(x, y, Math.round(16 * scale), {
-      color: '255,160,40',
-      speed: 8 * scale,
-      life: 0.45,
-      r0: 0.2,
+    // White flash core (very brief).
+    this.particles.burst(x, y, Math.round(10 * scale), {
+      color: '255,255,255',
+      speed: 7 * scale,
+      life: 0.18,
+      r0: 0.3,
       r1: 0.05,
       alpha0: 0.95,
+      drag: 0.78,
+    });
+    // Billowing grey smoke (the bulk of the effect).
+    this.particles.burst(x, y, Math.round(30 * scale), {
+      color: '70,70,72',
+      speed: 5 * scale,
+      life: 1.1,
+      r0: 0.3,
+      r1: 1.3 * scale,
+      alpha0: 0.55,
+      drag: 0.86,
+    });
+    this.particles.burst(x, y, Math.round(16 * scale), {
+      color: '40,40,42',
+      speed: 3 * scale,
+      life: 1.3,
+      r0: 0.4,
+      r1: 1.5 * scale,
+      alpha0: 0.45,
+      drag: 0.88,
+    });
+    // A little warm spark (small, not a fireball).
+    this.particles.burst(x, y, Math.round(8 * scale), {
+      color: '255,180,70',
+      speed: 9 * scale,
+      life: 0.3,
+      r0: 0.14,
+      r1: 0.03,
+      alpha0: 0.9,
       drag: 0.8,
     });
-    // coloured tank debris
+    // Coloured tank debris.
     if (colorKey) {
-      const rgb = hexToRgb(colorKey.base);
-      this.particles.burst(x, y, 14, {
-        color: rgb,
-        speed: 9,
-        life: 0.8,
+      this.particles.burst(x, y, 16, {
+        color: hexToRgb(colorKey.base),
+        speed: 10,
+        life: 0.7,
         r0: 0.22,
-        r1: 0.05,
+        r1: 0.04,
         alpha0: 0.95,
         drag: 0.82,
       });
     }
+  }
+
+  _puff(x, y, n, color, speed) {
+    this.particles.burst(x, y, n, { color, speed, life: 0.35, r0: 0.12, r1: 0.4, alpha0: 0.5, drag: 0.8 });
+  }
+
+  /** A drifting smoke puff — called per-frame behind homing missiles. */
+  trail(x, y) {
+    this.particles.spawn({
+      x: x + (rng.next() - 0.5) * 0.1,
+      y: y + (rng.next() - 0.5) * 0.1,
+      vx: (rng.next() - 0.5) * 0.6,
+      vy: (rng.next() - 0.5) * 0.6,
+      life: 0.5,
+      r0: 0.12,
+      r1: 0.4,
+      drag: 0.9,
+      color: '30,30,30',
+      alpha0: 0.4,
+      alpha1: 0,
+    });
   }
 
   update(dt) {
