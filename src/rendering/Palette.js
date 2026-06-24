@@ -47,9 +47,24 @@ export const TANK_COLORS = [
   makeTankColor('Magenta', '#bb169f'),
 ];
 
+/** Boss tank colour — dark gunmetal armour with hot-red accents/bullets. */
+export const LETHAL_TANK = {
+  name: 'Lethal',
+  base: '#d11f24', // projectile/HUD tint reads as menacing red
+  hull: '#2c2d31',
+  turret: '#202125',
+  tread: '#161619',
+  treadHi: '#34353a',
+  hi: '#4a4b52',
+  barrel: '#15151a',
+  swatch: '#2c2d31',
+  accent: '#ff2a2a', // glow + spikes
+};
+
 export const Palette = Object.freeze({
   // The arena reads light-on-light: near-white floor, mid/light-grey bevelled
   // walls with a soft drop shadow (matching the reference release).
+  lethalTank: LETHAL_TANK,
   arenaBg: '#edeef0',
   floorA: '#ececed',
   floorB: '#e3e4e7',

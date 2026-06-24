@@ -26,6 +26,25 @@ export class ProjectileRenderer {
         ctx.fill();
       } else {
         const r = Math.max(p.radius, p.kind === 'shotgun' || p.kind === 'gatling' ? 0.13 : 0.24);
+        // Coloured motion streak behind fast main bullets (sense of speed).
+        if ((p.kind === 'bullet' || p.kind === 'double') && p.velocity) {
+          const sp = Math.hypot(p.velocity.x, p.velocity.y);
+          if (sp > 1) {
+            const ux = p.velocity.x / sp;
+            const uy = p.velocity.y / sp;
+            const len = Math.min(1.3, sp * 0.06);
+            ctx.save();
+            ctx.globalAlpha = 0.32;
+            ctx.strokeStyle = p.colorKey ? p.colorKey.base : '#cfcfcf';
+            ctx.lineWidth = r * 1.1;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(x - ux * len, y - uy * len);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
         ctx.fillStyle = '#1a1a1a';
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);

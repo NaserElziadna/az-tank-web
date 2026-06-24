@@ -15,7 +15,7 @@ export class BulletWeapon extends Weapon {
   }
 
   _onPress(tank, sim) {
-    if (sim.liveProjectileCount(tank.slot, 'bullet') >= CFG.ammo) return;
+    if (sim.liveProjectileCount(tank.slot, 'bullet') >= (tank.bulletCap ?? CFG.ammo)) return;
     const muzzle = tank.muzzle(CFG.offset);
     sim.spawnProjectile({
       kind: 'bullet',

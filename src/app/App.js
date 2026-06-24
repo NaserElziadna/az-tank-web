@@ -3,6 +3,7 @@ import { MenuScreen } from '../ui/MenuScreen.js';
 import { SetupScreen } from '../ui/SetupScreen.js';
 import { PhaserGame } from '../phaser/PhaserGame.js';
 import { PhaserAudio } from '../phaser/PhaserAudio.js';
+import { ControllerType, Difficulty } from '../models/enums.js';
 import { el, clear } from '../ui/dom.js';
 
 const VERSION = 'v2.0';
@@ -39,7 +40,18 @@ export class App {
   }
 
   showMenu() {
-    this._setScreen(new MenuScreen({ onPlay: () => this.showSetup() }).root);
+    this._setScreen(new MenuScreen({ onPlay: () => this.showSetup(), onLethal: () => this.startLethalMode() }).root);
+  }
+
+  /** Boss mode: a 1-v-1 duel (first to 5) against one lethal tank. */
+  startLethalMode() {
+    this.startGame({
+      pointsToWin: 5,
+      players: [
+        { slot: 0, name: 'You', controller: ControllerType.HUMAN, difficulty: Difficulty.HARD },
+        { slot: 1, name: 'LETHAL', controller: ControllerType.AI, difficulty: Difficulty.LETHAL, lethal: true },
+      ],
+    });
   }
 
   showSetup() {

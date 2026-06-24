@@ -54,6 +54,10 @@ export class TankRenderer {
 
     ctx.translate(t.x, t.y);
     ctx.rotate(t.rotation);
+    if (t.spawnAnim != null && t.spawnAnim < 1) {
+      const s = 0.55 + 0.45 * t.spawnAnim; // scale-in pop on spawn
+      ctx.scale(s, s);
+    }
 
     // ── treads (dark rounded blocks down each side, with scrolling teeth) ──
     const treadThk = 0.98;
@@ -147,22 +151,64 @@ export class TankRenderer {
     ctx.arc(turretX, 0, 0.32, 0, Math.PI * 2);
     ctx.fill();
 
+    // ── lethal boss skin: nose spikes, red barrel tip, glowing turret core ──
+    if (t.lethal) {
+      const accent = (t.color && t.color.accent) || '#ff2a2a';
+      ctx.fillStyle = '#0e0e11';
+      ctx.lineWidth = 0.05;
+      ctx.strokeStyle = O;
+      for (const sy of [-0.7, 0, 0.7]) {
+        ctx.beginPath();
+        ctx.moveTo(halfLen - 0.2, sy - 0.22);
+        ctx.lineTo(halfLen + 0.55, sy);
+        ctx.lineTo(halfLen - 0.2, sy + 0.22);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.fillStyle = accent; // red barrel tip
+      ctx.beginPath();
+      ctx.arc(0.15 + barrelLen, 0, 0.17, 0, Math.PI * 2);
+      ctx.fill();
+      const glow = 0.45 + 0.35 * Math.abs(Math.sin(performance.now() / 220)); // pulsing core
+      ctx.globalAlpha = alpha * glow;
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(turretX, 0, 0.34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+    }
+
     ctx.restore();
 
     // ── shield bubble (world space, on top) ──
     if (t.shield) {
       const r = C.UPGRADES.SHIELD.radius;
+      const weak = t.shield.ratio < 0.34;
       ctx.save();
-      const pulse = t.shield.ratio < 0.34 ? 0.4 + 0.4 * Math.abs(Math.sin(performance.now() / 80)) : 0.7;
+      const pulse = weak ? 0.4 + 0.4 * Math.abs(Math.sin(performance.now() / 80)) : 0.7;
+      const rr = r * (1 + 0.05 * Math.sin(performance.now() / 240)); // gentle breathe
       ctx.globalAlpha = pulse * alpha;
       ctx.strokeStyle = Palette.shield;
       ctx.lineWidth = 0.22;
       ctx.beginPath();
-      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, rr, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 0.12 * pulse * alpha;
       ctx.fillStyle = Palette.shield;
       ctx.fill();
+      // hairline cracks when the shield is about to fail
+      if (weak) {
+        ctx.globalAlpha = pulse * alpha;
+        ctx.lineWidth = 0.05;
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + 0.6;
+          ctx.beginPath();
+          ctx.moveTo(t.x + Math.cos(a) * rr * 0.35, t.y + Math.sin(a) * rr * 0.35);
+          ctx.lineTo(t.x + Math.cos(a + 0.25) * rr, t.y + Math.sin(a + 0.25) * rr);
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     }
   }

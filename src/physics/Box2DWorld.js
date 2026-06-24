@@ -11,6 +11,7 @@ const b2PolygonShape = Box2D.Collision.Shapes.b2PolygonShape;
 const b2CircleShape = Box2D.Collision.Shapes.b2CircleShape;
 const b2ContactListener = Box2D.Dynamics.b2ContactListener;
 const b2AABB = Box2D.Collision.b2AABB;
+const b2WorldManifold = Box2D.Collision.b2WorldManifold;
 
 /** Collision categories — identical bitmask to the original game. */
 export const CAT = Object.freeze({
@@ -39,6 +40,9 @@ export class Box2DWorld {
     this.contacts = [];
     /** Projectiles that touched a wall/shield this step (id set) for bounce SFX. */
     this.bounced = new Set();
+    /** Per-tank wall-contact normal (slot -> unit {x,y} pointing out of the wall). */
+    this.tankWallNormal = new Map();
+    this._worldManifold = new b2WorldManifold();
     this._installContactListener();
   }
 
@@ -54,6 +58,33 @@ export class Box2DWorld {
       this._markBounce(a, b);
       this._markBounce(b, a);
     };
+    // Capture tank↔wall contact normals so the controller can slide along walls
+    // instead of dead-stopping (PreSolve has a resolved world manifold).
+    listener.PreSolve = (contact) => {
+      const a = classify(contact.GetFixtureA().GetUserData());
+      const b = classify(contact.GetFixtureB().GetUserData());
+      if (!a || !b) return;
+      let tank = null;
+      let tankIsA = false;
+      if (a.kind === 'tank' && b.kind === 'wall') {
+        tank = a;
+        tankIsA = true;
+      } else if (b.kind === 'tank' && a.kind === 'wall') {
+        tank = b;
+        tankIsA = false;
+      } else return;
+      contact.GetWorldManifold(this._worldManifold);
+      let nx = this._worldManifold.m_normal.x;
+      let ny = this._worldManifold.m_normal.y;
+      // m_normal points from fixtureA to fixtureB. Orient it to point OUT of the
+      // wall (toward the tank / open space).
+      if (tankIsA) {
+        nx = -nx;
+        ny = -ny;
+      }
+      const len = Math.hypot(nx, ny) || 1;
+      this.tankWallNormal.set(tank.slot, { x: nx / len, y: ny / len });
+    };
     this.world.SetContactListener(listener);
   }
 
@@ -67,6 +98,7 @@ export class Box2DWorld {
   step(dt) {
     this.contacts.length = 0;
     this.bounced.clear();
+    this.tankWallNormal.clear();
     this.world.Step(dt, 10, 10); // velocity / position iterations (original uses 10/10)
     this.world.ClearForces();
   }
@@ -145,19 +177,20 @@ export class Box2DWorld {
     return body;
   }
 
-  /** Dynamic circle mine/trap body. */
+  /** Dynamic circle mine/trap body. Damped + low restitution so a dropped mine
+   *  slides out behind the tank and quickly settles (not a perpetual bouncing ball). */
   createTrap(gameObject, x, y, radius, vx, vy) {
     const bd = new b2BodyDef();
     bd.type = b2Body.b2_dynamicBody;
     bd.position.Set(x, y);
     bd.fixedRotation = true;
-    bd.linearDamping = 0;
-    bd.allowSleep = false;
+    bd.linearDamping = 6.0;
+    bd.allowSleep = true;
     const body = this.world.CreateBody(bd);
     const fd = new b2FixtureDef();
-    fd.density = 0.1;
-    fd.friction = 0;
-    fd.restitution = 1.0;
+    fd.density = 0.4;
+    fd.friction = 0.6;
+    fd.restitution = 0.1;
     fd.shape = new b2CircleShape(radius);
     fd.filter.categoryBits = CAT.TRAP;
     fd.filter.maskBits = CAT.TRAP | CAT.TANK | CAT.MAZE | CAT.ZONE;

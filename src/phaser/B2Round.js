@@ -22,6 +22,7 @@ class B2Tank {
     this.player = player;
     this.slot = player.slot;
     this.colorKey = player.color;
+    this.lethal = !!player.lethal;
     this.body = body;
     this.position = new Vector2(body.GetPosition().x, body.GetPosition().y);
     this.prevPosition = this.position.clone();
@@ -33,11 +34,14 @@ class B2Tank {
     this.weaponQueue = [];
     this.shield = null;
     this.speedBoost = null;
-    this.aimer = null;
+    // Lethal tank: keeps more bullets in the air and has a permanent aimer.
+    this.bulletCap = this.lethal ? C.LETHAL.bulletCap : C.WEAPONS.BULLET.ammo;
+    this.aimer = this.lethal ? { time: Infinity, length: C.UPGRADES.AIMER.length } : null;
     this.locked = false;
     this.alive = true;
     this.stuck = false;
     this.treadOffset = 0;
+    this.spawnAnim = 0; // 0→1 fade/scale-in
     this._bumpCd = 0; // throttle wall-bump dust/SFX
   }
 
@@ -48,7 +52,7 @@ class B2Tank {
     return this.weaponQueue.length;
   }
   get speedModifier() {
-    return 1 + (this.speedBoost ? C.UPGRADES.SPEED_BOOST.effect : 0);
+    return 1 + (this.speedBoost ? C.UPGRADES.SPEED_BOOST.effect : 0) + (this.lethal ? C.LETHAL.speedBonus : 0);
   }
   get hasActiveShield() {
     return this.shield != null;
@@ -83,7 +87,19 @@ class B2Tank {
       this.body.SetAngularVelocity(angVel);
       if (intent.drive !== 0) {
         const speed = (intent.drive > 0 ? C.TANK.FORWARD_SPEED : -C.TANK.BACK_SPEED) * this.speedModifier;
-        this.body.SetLinearVelocity(Box2DWorld.vec(Math.cos(this.rotation) * speed, Math.sin(this.rotation) * speed));
+        let vx = Math.cos(this.rotation) * speed;
+        let vy = Math.sin(this.rotation) * speed;
+        // Wall-slide: if we're pushing into a wall, strip the into-wall component
+        // so the tank slides along it instead of dead-stopping (no need to reverse).
+        const wn = sim.b2.tankWallNormal.get(this.slot);
+        if (wn) {
+          const dot = vx * wn.x + vy * wn.y; // <0 means driving into the wall
+          if (dot < 0) {
+            vx -= dot * wn.x;
+            vy -= dot * wn.y;
+          }
+        }
+        this.body.SetLinearVelocity(Box2DWorld.vec(vx, vy));
         drive = intent.drive;
       } else {
         this.body.SetLinearVelocity(Box2DWorld.vec(0, 0));
@@ -115,6 +131,7 @@ class B2Tank {
   }
 
   updateTimers(dt) {
+    if (this.spawnAnim < 1) this.spawnAnim = Math.min(1, this.spawnAnim + dt * 4); // ~0.25s
     if (this._bumpCd > 0) this._bumpCd -= dt;
     if (this.shield && (this.shield.time -= dt) <= 0) this.shield = null;
     if (this.speedBoost && (this.speedBoost.time -= dt) <= 0) this.speedBoost = null;
@@ -415,10 +432,20 @@ export class B2Round {
       const tankObj = objs.find((o) => o.kind === 'tank');
       const colObj = objs.find((o) => o.kind === 'collectible');
       const wallObj = objs.find((o) => o.kind === 'wall');
+      const trapObj = objs.find((o) => o.kind === 'trap');
       if (proj && tankObj) this._projectileHitTank(proj.ref, tankObj.ref);
       else if (colObj && tankObj) this._pickup(colObj.ref, tankObj.ref);
+      else if (trapObj && tankObj) this._mineTouch(trapObj.ref, tankObj.ref);
       else if (wallObj && tankObj) this._tankBump(tankObj.ref);
     }
+  }
+
+  /** An armed mine touched by any tank trips immediately (then fuses to detonate). */
+  _mineTouch(mine, tank) {
+    if (!mine || mine.dead || !tank || !tank.alive) return;
+    if (mine.state !== 'armed') return; // still arming, or already tripped
+    mine.state = 'tripped';
+    this.emit('mine:tripped', { x: mine.position.x, y: mine.position.y });
   }
 
   /** Dust + thud when a tank drives into a wall (throttled per tank). */

@@ -28,7 +28,7 @@ export class AIController {
     this.repathTimer = 0;
     this.fireCooldown = 0;
     this.releaseFrames = 0; // forces a trigger release so single-shot guns re-fire
-    this.reactionTimer = lerpTrait(0.35, 0, this.t.dexterity); // pre-fire delay
+    this.reactionTimer = this.t.lethal ? 0 : lerpTrait(0.3, 0, this.t.dexterity); // pre-fire delay
     this.aimError = 0;
     this.aimWobbleTimer = 0;
     this.unstuckTimer = 0;
@@ -102,7 +102,7 @@ export class AIController {
       if (enemy.worldDist > 15 && Math.abs(wrapAngle(aim.angle - tank.rotation)) < 0.4) intent.drive = 0.5;
       return this._tryFire(tank, intent, dt, aim);
     }
-    this.reactionTimer = lerpTrait(0.35, 0, this.t.dexterity); // reset when no shot
+    this.reactionTimer = this.t.lethal ? 0 : lerpTrait(0.3, 0, this.t.dexterity); // reset when no shot
 
     // 5. Go for a crate.
     if (wantCrate) {
@@ -110,8 +110,10 @@ export class AIController {
       return this._follow(tank, sim, crate.tile, myTile);
     }
 
-    // 6. Hunt a reachable target.
-    if (enemy && enemy.tileDist <= lerpTrait(6, 22, this.t.cleverness)) {
+    // 6. Hunt the target. _selectTarget only returns reachable enemies, so if we
+    // have one we always pursue it — bots converge on the fight instead of
+    // wandering in circles. Aim is blended in as we close the distance.
+    if (enemy) {
       this.goal = 'hunt';
       const intent = this._follow(tank, sim, enemy.tile, myTile);
       if (aim) intent.turn = this._blendTurn(intent.turn, this._aimTurn(tank, aim.angle));
@@ -186,7 +188,7 @@ export class AIController {
     if (this.aimWobbleTimer <= 0) {
       this.aimWobbleTimer = 0.3;
       // Random aim error, vanishing at high dexterity (EASY bots aim shakily).
-      this.aimError = (rng.next() - 0.5) * lerpTrait(0.3, 0, this.t.dexterity);
+      this.aimError = (rng.next() - 0.5) * lerpTrait(0.18, 0, this.t.dexterity);
     }
   }
 
@@ -212,7 +214,9 @@ export class AIController {
         ignoreTankId: tank.slot,
       });
       if (trace.hitTank && trace.hitTank.id === enemy.slot) {
-        if (trace.firstSegmentLength < 3 && trace.length > trace.firstSegmentLength + 0.5) continue; // avoid self-wall suicide
+        // Avoid self-wall suicide, but relaxed so genuine corner bank-shots survive.
+        const selfMin = this.t.lethal ? 1.5 : 2;
+        if (trace.firstSegmentLength < selfMin && trace.length > trace.firstSegmentLength + 0.5) continue;
         if (!best || trace.length < best.length) best = { angle, length: trace.length };
       }
     }
@@ -221,8 +225,8 @@ export class AIController {
     // Apply skill-based aim error so low-dexterity bots genuinely miss.
     const aimAngle = best.angle + this.aimError;
     const headingErr = Math.abs(wrapAngle(aimAngle - tank.rotation));
-    const fireTolerance = lerpTrait(0.08, 0.5, this.t.aggressiveness);
-    const fireDist = lerpTrait(8, 22, this.t.aggressiveness);
+    const fireTolerance = lerpTrait(0.14, 0.55, this.t.aggressiveness);
+    const fireDist = lerpTrait(13, 28, this.t.aggressiveness);
     const fireReady = headingErr < fireTolerance && best.length < fireDist;
     return { angle: aimAngle, fireReady };
   }
@@ -247,9 +251,9 @@ export class AIController {
     intent.fire = true;
     intent.firePressed = true;
     if (!auto) {
-      this.fireCooldown = lerpTrait(0.55, 0.15, this.t.dexterity);
-      this.releaseFrames = 2;
-      this.reactionTimer = lerpTrait(0.35, 0, this.t.dexterity); // re-arm for next shot
+      this.fireCooldown = this.t.lethal ? 0.08 : lerpTrait(0.5, 0.13, this.t.dexterity);
+      this.releaseFrames = this.t.lethal ? 1 : 2;
+      this.reactionTimer = this.t.lethal ? 0 : lerpTrait(0.3, 0, this.t.dexterity); // re-arm for next shot
     }
     return intent;
   }
@@ -355,10 +359,20 @@ export class AIController {
 
   _wander(tank, sim, myTile) {
     if (this.wanderTimer <= 0 || this.path.length === 0) {
-      this.wanderTimer = rng.range(1.5, 3.5);
-      const tiles = sim.maze.reachableTiles();
-      const far = tiles.filter((t) => sim.maze.tileDistance(myTile.tx, myTile.ty, t.x, t.y) >= 2);
-      const target = far.length ? rng.pick(far) : rng.pick(tiles);
+      this.wanderTimer = rng.range(1.2, 2.4);
+      // Bias toward the nearest living enemy so bots converge on the fight even
+      // when there's no clean target (e.g. behind a shield) — never aimless loops.
+      let target = null;
+      const enemies = sim.tanks.filter((o) => o.slot !== this.slot && o.alive);
+      if (enemies.length) {
+        const near = this._nearestOf(tank, sim, enemies);
+        if (near) target = { x: near.tile.x, y: near.tile.y };
+      }
+      if (!target) {
+        const tiles = sim.maze.reachableTiles();
+        const far = tiles.filter((t) => sim.maze.tileDistance(myTile.tx, myTile.ty, t.x, t.y) >= 2);
+        target = far.length ? rng.pick(far) : rng.pick(tiles);
+      }
       this.path = this._shortest(sim, { tx: myTile.tx, ty: myTile.ty }, { tx: target.x, ty: target.y }, null);
     }
     this._consumeReached(tank, sim);

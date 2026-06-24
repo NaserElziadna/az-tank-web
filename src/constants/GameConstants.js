@@ -51,10 +51,10 @@ export const C = Object.freeze({
     },
     HOMING: { radius: 0.38, speed: 17, offset: 2.5, accel: 42, activationTime: 1.1, maxLifetime: 10, ammo: 1 },
     MINE: {
-      bodyRadius: 0.8, launchSpeed: 12.5, offset: -1.45, ammo: 1,
+      bodyRadius: 0.8, launchSpeed: 6.0, offset: -1.45, ammo: 1,
       activationDelay: 0.5, detonationDelay: 0.4,
       shrapnel: 30, shrapnelRadius: 0.1, shrapnelSpeedMin: 25, shrapnelSpeedMax: 35,
-      triggerRadius: 1.4,
+      triggerRadius: 2.8,
     },
   }),
 
@@ -109,6 +109,12 @@ export const C = Object.freeze({
     // Result is shown during ENDING; this also serves as the between-rounds gap.
     ROUND_FINISHING_DURATION: 2.2,
     GO_DURATION: 0.5,
+  }),
+
+  // ── Lethal boss tank (mechanical edge over a normal tank) ───────────────────
+  LETHAL: Object.freeze({
+    speedBonus: 0.18, // +18% movement
+    bulletCap: 7, // can keep more bullets in the air than the default 5
   }),
 
   MAX_WEAPON_QUEUE: 3,

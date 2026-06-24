@@ -5,8 +5,8 @@ import { el } from './dom.js';
  * and reports the choice back via callbacks; the app owns navigation.
  */
 export class MenuScreen {
-  /** @param {{onPlay: ()=>void}} handlers */
-  constructor({ onPlay }) {
+  /** @param {{onPlay: ()=>void, onLethal?: ()=>void}} handlers */
+  constructor({ onPlay, onLethal }) {
     this.root = el('div.screen.menu', {}, [
       el('div.menu__logo', {}, [
         el('span.tank', { text: 'AZ TANK' }),
@@ -17,6 +17,7 @@ export class MenuScreen {
       }),
       el('div.menu__actions', {}, [
         el('button.btn', { text: '▶  Play', on: { click: onPlay } }),
+        el('button.btn.btn--lethal', { text: '☠  Lethal Mode', on: { click: onLethal || onPlay } }),
         el('button.btn.btn--ghost', { text: 'How to play', on: { click: () => this._toggleHelp() } }),
       ]),
       this._help(),
@@ -32,6 +33,7 @@ export class MenuScreen {
         el('p', { text: 'Bullets bounce off walls and live for several seconds — line up bank shots, but a ricochet can kill you too.' }),
         el('p', { text: 'Grab crates for special weapons (shotgun, gatling, homing missile, mines, laser) and upgrades (shield, speed, aimer).' }),
         el('p', { text: 'Add 1–3 AI opponents or share the keyboard with friends.' }),
+        el('p', { text: '☠ Lethal Mode: a 1-v-1 duel against one relentless, faster, dead-eye tank. First to 5 wins.' }),
       ],
     );
     return this.helpBox;

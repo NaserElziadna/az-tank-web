@@ -87,12 +87,12 @@ export class CollectibleRenderer {
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
     this._round(ctx, -h, -h, s, s, 0.4);
     ctx.stroke();
-    // dark icon, drawn directly on the light face
+    // dark icon, drawn directly on the light face — bigger + bolder for readability
     ctx.save();
-    ctx.scale(0.92, 0.92);
-    ctx.fillStyle = '#33363c';
-    ctx.strokeStyle = '#33363c';
-    ctx.lineWidth = 0.22;
+    ctx.scale(1.04, 1.04);
+    ctx.fillStyle = '#26282d';
+    ctx.strokeStyle = '#26282d';
+    ctx.lineWidth = 0.3;
     this._glyph(ctx, kind);
     ctx.restore();
   }

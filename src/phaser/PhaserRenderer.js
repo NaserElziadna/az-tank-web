@@ -94,7 +94,8 @@ export class PhaserRenderer {
         if (!tank.alive) continue;
         // In-game tanks are top-down; the tankIcon PNGs are the 3/4 garage view,
         // so they're wrong here. Render the clean top-down vector tank instead.
-        this.tankR.draw(ctx, this._tankView(tank, round, alpha), 1);
+        const view = this._tankView(tank, round, alpha);
+        this.tankR.draw(ctx, view, view.spawnAnim);
       }
       // Trails: missiles smoke; main bullets leave a faint coloured streak.
       for (const p of round.projectiles) {
@@ -120,6 +121,9 @@ export class PhaserRenderer {
       }
       ctx.restore();
 
+      // Screen-space vignette to frame the arena and add depth.
+      this._drawVignette(ctx, w, h);
+
       // HUD (screen space).
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       const activeWeapons = new Map();
@@ -133,6 +137,21 @@ export class PhaserRenderer {
     }
 
     this._overlay(ctx, match, w, h);
+  }
+
+  /** Cached radial dark-edge vignette (rebuilt only when the canvas resizes). */
+  _drawVignette(ctx, w, h) {
+    if (!this._vig || this._vig.w !== w || this._vig.h !== h) {
+      const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, Math.max(w, h) * 0.72);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.4)');
+      this._vig = { w, h, grad: g };
+    }
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = this._vig.grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
   }
 
   _overlay(ctx, match, w, h) {
@@ -273,6 +292,8 @@ export class PhaserRenderer {
       y,
       rotation: rot,
       color: tank.colorKey,
+      lethal: tank.lethal,
+      spawnAnim: tank.spawnAnim ?? 1,
       treadOffset: tank.treadOffset,
       shield: tank.shield ? { ratio: tank.shield.time / C.UPGRADES.SHIELD.lifetime } : null,
       aimer,

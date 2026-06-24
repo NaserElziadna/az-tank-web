@@ -1,11 +1,12 @@
 import Phaser from './phaserLib.js';
 import { Player } from '../models/Player.js';
 import { ControllerType } from '../models/enums.js';
-import { colorForSlot } from '../rendering/Palette.js';
+import { colorForSlot, Palette } from '../rendering/Palette.js';
 import { schemeForSlot } from '../core/input/ControlSchemes.js';
 import { B2Match } from './B2Match.js';
 import { PhaserRenderer } from './PhaserRenderer.js';
 import { PhaserControls } from './PhaserControls.js';
+import { TouchControls, isTouchDevice } from './TouchControls.js';
 import { AssetStore } from './AssetStore.js';
 import { TankIconCompositor } from './TankIconCompositor.js';
 import { C } from '../constants/GameConstants.js';
@@ -26,6 +27,8 @@ export class PhaserGame {
     this.setup = setup;
     this.onMatchOver = onMatchOver;
     this.version = version;
+    this.parentEl = parentEl;
+    this.touch = null;
     this.match = null;
     this.renderer = null;
     this._acc = 0;
@@ -53,17 +56,25 @@ export class PhaserGame {
     game.scale.scaleMode = Phaser.ScaleManager.RESIZE;
     game.stage.disableVisibilityChange = true;
 
+    // On-screen controls (touch devices) drive the first human player; they're
+    // merged with that player's keyboard so either input source works.
+    const firstHumanSlot = this.setup.players.find((pc) => pc.controller === ControllerType.HUMAN)?.slot;
+    if (firstHumanSlot != null && isTouchDevice()) {
+      this.touch = new TouchControls(this.parentEl);
+    }
+
     const players = [];
     const humanControllers = new Map();
     for (const pc of this.setup.players) {
-      const color = colorForSlot(pc.slot);
+      const color = pc.lethal ? Palette.lethalTank : colorForSlot(pc.slot);
       let controls = null;
       if (pc.controller === ControllerType.HUMAN) {
         controls = new PhaserControls(game, schemeForSlot(pc.slot));
-        humanControllers.set(pc.slot, { think: () => controls.read() });
+        const usesTouch = pc.slot === firstHumanSlot;
+        humanControllers.set(pc.slot, { think: () => this._readHuman(controls, usesTouch) });
       }
       players.push(
-        new Player({ slot: pc.slot, name: pc.name, controller: pc.controller, color, controls, difficulty: pc.difficulty }),
+        new Player({ slot: pc.slot, name: pc.name, controller: pc.controller, color, controls, difficulty: pc.difficulty, lethal: pc.lethal }),
       );
     }
 
@@ -76,6 +87,19 @@ export class PhaserGame {
     this.match = new B2Match(this.bus);
     this.match.configure(players, { pointsToWin: this.setup.pointsToWin, humanControllers });
     this.match.start();
+  }
+
+  /** Merge keyboard + (optional) on-screen touch intent for one human. */
+  _readHuman(controls, usesTouch) {
+    const k = controls.read();
+    if (!usesTouch || !this.touch || !this.touch.active) return k;
+    const t = this.touch.read();
+    return {
+      drive: t.drive !== 0 ? t.drive : k.drive,
+      turn: t.turn !== 0 ? t.turn : k.turn,
+      fire: t.fire || k.fire,
+      firePressed: false,
+    };
   }
 
   _update() {
@@ -111,6 +135,10 @@ export class PhaserGame {
   }
 
   destroy() {
+    if (this.touch) {
+      this.touch.dispose();
+      this.touch = null;
+    }
     if (this.renderer) this.renderer.dispose();
     // Guard: Phaser.Game.destroy() throws if the game never finished booting.
     try {

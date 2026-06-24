@@ -47,8 +47,12 @@ export class MazeRenderer {
     ctx.fill();
     ctx.restore();
 
-    // Wall body pass.
-    ctx.fillStyle = Palette.wall;
+    // Wall body pass — a single top-light → bottom-shade gradient across the
+    // whole arena gives the slabs consistent depth (one gradient, cheap).
+    const wg = ctx.createLinearGradient(0, 0, 0, maze.worldHeight);
+    wg.addColorStop(0, '#9aa0a8');
+    wg.addColorStop(1, '#7e828a');
+    ctx.fillStyle = wg;
     ctx.beginPath();
     for (const w of maze.walls) this._slabPath(ctx, w, r);
     ctx.fill();

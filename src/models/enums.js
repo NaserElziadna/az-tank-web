@@ -6,10 +6,12 @@ export const ControllerType = Object.freeze({
   AI: 'ai',
 });
 
-/** AI skill profiles. */
+/** AI skill profiles. LETHAL is the boss-mode tier (maxed brain + a tank edge). */
 export const Difficulty = Object.freeze({
   EASY: 'easy',
+  MEDIUM: 'medium',
   HARD: 'hard',
+  LETHAL: 'lethal',
 });
 
 /**

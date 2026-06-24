@@ -13,9 +13,21 @@ export class EffectsLayer {
   /** @param {import('../../core/events/EventBus.js').EventBus} bus */
   constructor(bus) {
     this.particles = new ParticleSystem(1200);
+    /** Expanding shockwave rings (stroked, separate from the filled particles). */
+    this._rings = [];
     this._unsub = [];
-    this._unsub.push(bus.on('tank:destroyed', (e) => this._explosion(e.x, e.y, e.colorKey)));
-    this._unsub.push(bus.on('mine:detonated', (e) => this._explosion(e.x, e.y, null, 0.8)));
+    this._unsub.push(
+      bus.on('tank:destroyed', (e) => {
+        this._explosion(e.x, e.y, e.colorKey);
+        this._ring(e.x, e.y, 0.6, 4.4, e.colorKey);
+      }),
+    );
+    this._unsub.push(
+      bus.on('mine:detonated', (e) => {
+        this._explosion(e.x, e.y, null, 0.8);
+        this._ring(e.x, e.y, 0.45, 3.2, null);
+      }),
+    );
     this._unsub.push(bus.on('mine:tripped', (e) => this._puff(e.x, e.y, 6, '210,40,40', 2)));
     // Collide flare: a small dust puff wherever a projectile hits a wall/shield.
     this._unsub.push(bus.on('projectile:bounce', (e) => this._puff(e.x, e.y, 4, '120,120,120', 1.6)));
@@ -25,10 +37,16 @@ export class EffectsLayer {
     this._unsub.push(bus.on('weapon:flash', (e) => this._flash(e.x, e.y)));
   }
 
-  /** Bright muzzle flash + a wisp of smoke. */
+  /** Bright punchy muzzle flash + a wisp of smoke. */
   _flash(x, y) {
-    this.particles.burst(x, y, 5, { color: '255,235,150', speed: 4, life: 0.12, r0: 0.22, r1: 0.04, alpha0: 0.95, drag: 0.7 });
-    this.particles.burst(x, y, 4, { color: '90,90,90', speed: 2.5, life: 0.35, r0: 0.1, r1: 0.4, alpha0: 0.4, drag: 0.85 });
+    this.particles.burst(x, y, 9, { color: '255,238,160', speed: 6, life: 0.14, r0: 0.34, r1: 0.05, alpha0: 1, drag: 0.7 });
+    this.particles.burst(x, y, 5, { color: '255,170,60', speed: 4, life: 0.18, r0: 0.2, r1: 0.04, alpha0: 0.9, drag: 0.75 });
+    this.particles.burst(x, y, 5, { color: '90,90,90', speed: 2.5, life: 0.4, r0: 0.12, r1: 0.5, alpha0: 0.4, drag: 0.85 });
+  }
+
+  /** Push an expanding shockwave ring (world metres). */
+  _ring(x, y, r0, r1, colorKey) {
+    this._rings.push({ x, y, t: 0, life: 0.45, r0, r1, color: colorKey ? hexToRgb(colorKey.base) : '255,255,255' });
   }
 
   /** Light dust kicked up behind a moving tank's treads. */
@@ -143,16 +161,29 @@ export class EffectsLayer {
 
   update(dt) {
     this.particles.update(dt);
+    for (let i = this._rings.length - 1; i >= 0; i--) {
+      if ((this._rings[i].t += dt) >= this._rings[i].life) this._rings.splice(i, 1);
+    }
   }
 
   render(ctx) {
     this.particles.render(ctx);
+    for (const ring of this._rings) {
+      const k = ring.t / ring.life; // 0..1
+      const r = ring.r0 + (ring.r1 - ring.r0) * k;
+      ctx.strokeStyle = `rgba(${ring.color},${(1 - k) * 0.6})`;
+      ctx.lineWidth = 0.18 * (1 - k) + 0.04;
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   dispose() {
     for (const off of this._unsub) off();
     this._unsub.length = 0;
     this.particles.clear();
+    this._rings.length = 0;
   }
 }
 
