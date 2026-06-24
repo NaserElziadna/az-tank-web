@@ -35,23 +35,38 @@ export class ProjectileRenderer {
           ctx.lineWidth = 0.07;
           ctx.stroke();
         }
+        // sheen → reads as a round metal ball, not a flat dot
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.beginPath();
+        ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.34, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
     for (const b of beams) {
       const a = Math.max(0, b.life / b.max);
+      const path = () => {
+        ctx.beginPath();
+        ctx.moveTo(b.points[0].x, b.points[0].y);
+        for (let i = 1; i < b.points.length; i++) ctx.lineTo(b.points[i].x, b.points[i].y);
+        ctx.stroke();
+      };
       ctx.save();
-      ctx.globalAlpha = a;
-      ctx.strokeStyle = Palette.laser;
       ctx.lineCap = 'round';
-      ctx.lineWidth = 0.45 * a + 0.1;
-      ctx.beginPath();
-      ctx.moveTo(b.points[0].x, b.points[0].y);
-      for (let i = 1; i < b.points.length; i++) ctx.lineTo(b.points[i].x, b.points[i].y);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 0.16 * a;
-      ctx.stroke();
+      ctx.lineJoin = 'round';
+      // soft outer halo → red → bright white core (a real-looking laser)
+      ctx.globalAlpha = a * 0.3;
+      ctx.strokeStyle = '#ff2a2a';
+      ctx.lineWidth = 0.75 * a + 0.12;
+      path();
+      ctx.globalAlpha = a * 0.85;
+      ctx.strokeStyle = '#ff3b3b';
+      ctx.lineWidth = 0.32 * a + 0.06;
+      path();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 0.12 * a + 0.03;
+      path();
       ctx.restore();
     }
   }
