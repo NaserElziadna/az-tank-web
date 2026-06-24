@@ -39,93 +39,113 @@ export class TankRenderer {
     ctx.save();
     ctx.globalAlpha = alpha;
 
+    const halfLen = TANK.HEIGHT / 2; // along X (forward)
+    const halfWid = TANK.WIDTH / 2; // along Y
+    const O = Palette.outline;
+
     // Ground shadow.
     ctx.save();
-    ctx.translate(t.x + 0.18, t.y + 0.24);
+    ctx.translate(t.x + 0.16, t.y + 0.22);
     ctx.rotate(t.rotation);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    this._roundRect(ctx, -TANK.HEIGHT / 2, -TANK.WIDTH / 2, TANK.HEIGHT, TANK.WIDTH, 0.6);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    this._roundRect(ctx, -halfLen, -halfWid, TANK.HEIGHT, TANK.WIDTH, 0.7);
     ctx.fill();
     ctx.restore();
 
     ctx.translate(t.x, t.y);
     ctx.rotate(t.rotation);
 
-    const halfLen = TANK.HEIGHT / 2; // along X (forward)
-    const halfWid = TANK.WIDTH / 2; // along Y
-
-    // ── treads ──
-    const treadThk = 0.92;
+    // ── treads (dark rounded blocks down each side, with scrolling teeth) ──
+    const treadThk = 0.98;
     const treadInset = halfWid - treadThk / 2;
+    const treadLen = TANK.HEIGHT - 0.1;
     for (const side of [-1, 1]) {
       const cy = side * treadInset;
       ctx.fillStyle = color.tread;
-      this._roundRect(ctx, -halfLen, cy - treadThk / 2, TANK.HEIGHT, treadThk, 0.28);
+      this._roundRect(ctx, -treadLen / 2, cy - treadThk / 2, treadLen, treadThk, 0.3);
       ctx.fill();
-      ctx.lineWidth = 0.12;
-      ctx.strokeStyle = Palette.outline;
-      this._roundRect(ctx, -halfLen, cy - treadThk / 2, TANK.HEIGHT, treadThk, 0.28);
-      ctx.stroke();
-      // Tread "teeth", scrolling with movement.
-      ctx.strokeStyle = color.treadHi;
-      ctx.lineWidth = 0.1;
-      const spacing = 0.5;
-      const scroll = ((t.treadOffset || 0) % spacing + spacing) % spacing;
-      for (let x = -halfLen + scroll; x < halfLen; x += spacing) {
+      // top highlight strip → 3D
+      ctx.fillStyle = color.treadHi;
+      ctx.globalAlpha = alpha * 0.55;
+      this._roundRect(ctx, -treadLen / 2 + 0.08, cy - treadThk / 2 + 0.07, treadLen - 0.16, treadThk * 0.34, 0.18);
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+      // teeth notches, scrolling with motion
+      ctx.strokeStyle = 'rgba(0,0,0,0.32)';
+      ctx.lineWidth = 0.11;
+      const spacing = 0.56;
+      const scroll = (((t.treadOffset || 0) % spacing) + spacing) % spacing;
+      for (let x = -treadLen / 2 + scroll; x < treadLen / 2; x += spacing) {
         ctx.beginPath();
-        ctx.moveTo(x, cy - treadThk / 2 + 0.08);
-        ctx.lineTo(x, cy + treadThk / 2 - 0.08);
+        ctx.moveTo(x, cy - treadThk / 2 + 0.07);
+        ctx.lineTo(x, cy + treadThk / 2 - 0.07);
         ctx.stroke();
       }
+      ctx.lineWidth = 0.14;
+      ctx.strokeStyle = O;
+      this._roundRect(ctx, -treadLen / 2, cy - treadThk / 2, treadLen, treadThk, 0.3);
+      ctx.stroke();
     }
 
-    // ── hull ──
-    const hullLen = TANK.HEIGHT - 0.7;
-    const hullWid = TANK.WIDTH - 1.0;
+    // ── hull (rounded body with a bevel: light top, shaded bottom) ──
+    const hullLen = TANK.HEIGHT - 0.5;
+    const hullWid = TANK.WIDTH - 0.85;
     ctx.fillStyle = color.hull;
-    this._roundRect(ctx, -hullLen / 2, -hullWid / 2, hullLen, hullWid, 0.5);
+    this._roundRect(ctx, -hullLen / 2, -hullWid / 2, hullLen, hullWid, 0.6);
     ctx.fill();
-    // top highlight
-    ctx.fillStyle = color.hi;
-    ctx.globalAlpha = alpha * 0.35;
-    this._roundRect(ctx, -hullLen / 2 + 0.2, -hullWid / 2 + 0.18, hullLen - 0.4, hullWid * 0.42, 0.4);
+    ctx.fillStyle = color.hi; // top bevel
+    ctx.globalAlpha = alpha * 0.32;
+    this._roundRect(ctx, -hullLen / 2 + 0.16, -hullWid / 2 + 0.12, hullLen - 0.32, hullWid * 0.44, 0.5);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.14)'; // bottom shade
+    this._roundRect(ctx, -hullLen / 2 + 0.16, hullWid * 0.06, hullLen - 0.32, hullWid * 0.4, 0.4);
     ctx.fill();
     ctx.globalAlpha = alpha;
     ctx.lineWidth = 0.16;
-    ctx.strokeStyle = Palette.outline;
-    this._roundRect(ctx, -hullLen / 2, -hullWid / 2, hullLen, hullWid, 0.5);
+    ctx.strokeStyle = O;
+    this._roundRect(ctx, -hullLen / 2, -hullWid / 2, hullLen, hullWid, 0.6);
     ctx.stroke();
 
-    // ── barrel ──
-    const barrelLen = TANK.BARREL_LENGTH + 0.1;
-    ctx.fillStyle = color.barrel;
-    this._roundRect(ctx, 0, -0.22, barrelLen, 0.44, 0.16);
+    // ── barrel (thick gunmetal, highlight stripe, dark muzzle) ──
+    const barrelLen = TANK.BARREL_LENGTH + 0.2;
+    const barrelW = 0.5;
+    ctx.fillStyle = '#3b3e44';
+    this._roundRect(ctx, 0.15, -barrelW / 2, barrelLen, barrelW, 0.18);
+    ctx.fill();
+    ctx.fillStyle = '#6a6e76';
+    this._roundRect(ctx, 0.3, -barrelW / 2 + 0.07, barrelLen - 0.25, barrelW * 0.28, 0.08);
     ctx.fill();
     ctx.lineWidth = 0.1;
-    ctx.strokeStyle = Palette.outline;
-    this._roundRect(ctx, 0, -0.22, barrelLen, 0.44, 0.16);
+    ctx.strokeStyle = O;
+    this._roundRect(ctx, 0.15, -barrelW / 2, barrelLen, barrelW, 0.18);
     ctx.stroke();
-    // muzzle
-    ctx.fillStyle = '#1c1c1c';
+    ctx.fillStyle = '#191b1f';
     ctx.beginPath();
-    ctx.arc(barrelLen, 0, 0.28, 0, Math.PI * 2);
+    ctx.arc(0.15 + barrelLen, 0, 0.31, 0, Math.PI * 2);
     ctx.fill();
+    ctx.lineWidth = 0.08;
+    ctx.stroke();
 
-    // ── turret (sits rear-of-centre so the barrel overhangs the front) ──
+    // ── turret (dome, slightly back of centre, with highlight + hatch) ──
+    const turretX = -0.15;
+    const turretR = 0.96;
     ctx.fillStyle = color.turret;
     ctx.beginPath();
-    ctx.arc(-0.25, 0, 0.92, 0, Math.PI * 2);
+    ctx.arc(turretX, 0, turretR, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 0.16;
-    ctx.strokeStyle = Palette.outline;
+    ctx.strokeStyle = O;
     ctx.stroke();
-    // turret highlight
     ctx.fillStyle = color.hi;
-    ctx.globalAlpha = alpha * 0.4;
+    ctx.globalAlpha = alpha * 0.45;
     ctx.beginPath();
-    ctx.arc(-0.45, -0.2, 0.45, 0, Math.PI * 2);
+    ctx.arc(turretX - 0.26, -0.28, 0.46, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.beginPath();
+    ctx.arc(turretX, 0, 0.32, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
 

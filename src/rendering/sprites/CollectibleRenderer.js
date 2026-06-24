@@ -67,23 +67,41 @@ export class CollectibleRenderer {
     const s = C.COLLECTIBLE.CRATE_SIZE;
     const h = s / 2;
     const isUpgrade = WeaponFactory.isUpgrade(kind);
-    // box
+    // drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    this._round(ctx, -h + 0.16, -h + 0.22, s, s, 0.35);
+    ctx.fill();
+    // box body
     ctx.fillStyle = isUpgrade ? '#3f6fb0' : Palette.crate;
-    this._round(ctx, -h, -h, s, s, 0.3);
+    this._round(ctx, -h, -h, s, s, 0.35);
     ctx.fill();
-    // bevel
-    ctx.fillStyle = isUpgrade ? '#5a8fd8' : Palette.crateLight;
-    this._round(ctx, -h + 0.15, -h + 0.15, s - 0.3, (s - 0.3) * 0.45, 0.2);
+    // top bevel
+    ctx.fillStyle = isUpgrade ? '#5f93dd' : Palette.crateLight;
+    ctx.globalAlpha = 0.9;
+    this._round(ctx, -h + 0.18, -h + 0.16, s - 0.36, s * 0.32, 0.24);
     ctx.fill();
-    ctx.lineWidth = 0.18;
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 0.2;
     ctx.strokeStyle = Palette.outline;
-    this._round(ctx, -h, -h, s, s, 0.3);
+    this._round(ctx, -h, -h, s, s, 0.35);
     ctx.stroke();
-    // glyph
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 0.16;
+    // white badge for the icon → crisp, readable
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    ctx.beginPath();
+    ctx.arc(0, 0.12, s * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 0.1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.stroke();
+    // dark glyph on the badge
+    ctx.save();
+    ctx.translate(0, 0.12);
+    ctx.scale(0.8, 0.8);
+    ctx.fillStyle = '#2b2d33';
+    ctx.strokeStyle = '#2b2d33';
+    ctx.lineWidth = 0.2;
     this._glyph(ctx, kind);
+    ctx.restore();
   }
 
   _glyph(ctx, kind) {

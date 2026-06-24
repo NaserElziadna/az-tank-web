@@ -53,12 +53,14 @@ export class MazeRenderer {
     for (const w of maze.walls) this._slabPath(ctx, w, r);
     ctx.fill();
 
-    // Top highlight strip.
+    // Thin, low-opacity top edge only — flat clean walls, not puffy 3D bars.
+    ctx.save();
+    ctx.globalAlpha = 0.45;
     ctx.fillStyle = Palette.wallHi;
     for (const w of maze.walls) {
-      const hh = (w.maxY - w.minY) * 0.32;
-      ctx.fillRect(w.minX + 0.12, w.minY + 0.1, w.maxX - w.minX - 0.24, Math.min(hh, 0.3));
+      ctx.fillRect(w.minX + 0.16, w.minY + 0.08, w.maxX - w.minX - 0.32, 0.12);
     }
+    ctx.restore();
   }
 
   _slabPath(ctx, w, r) {

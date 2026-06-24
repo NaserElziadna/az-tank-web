@@ -92,8 +92,9 @@ export class PhaserRenderer {
       this.colR.drawMines(ctx, round.mines);
       for (const tank of round.tanks) {
         if (!tank.alive) continue;
-        const view = this._tankView(tank, round, alpha);
-        if (!this._drawTankSprite(ctx, view)) this.tankR.draw(ctx, view, 1); // vector fallback
+        // In-game tanks are top-down; the tankIcon PNGs are the 3/4 garage view,
+        // so they're wrong here. Render the clean top-down vector tank instead.
+        this.tankR.draw(ctx, this._tankView(tank, round, alpha), 1);
       }
       this.projR.draw(ctx, round.projectiles, round.beams, alpha);
       this.effects.render(ctx);
