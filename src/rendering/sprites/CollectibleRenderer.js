@@ -66,40 +66,33 @@ export class CollectibleRenderer {
   _crate(ctx, kind) {
     const s = C.COLLECTIBLE.CRATE_SIZE;
     const h = s / 2;
-    const isUpgrade = WeaponFactory.isUpgrade(kind);
+    // Light rounded square with a dark icon (matches the original's crates).
     // drop shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    this._round(ctx, -h + 0.16, -h + 0.22, s, s, 0.35);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    this._round(ctx, -h + 0.14, -h + 0.2, s, s, 0.4);
     ctx.fill();
-    // box body
-    ctx.fillStyle = isUpgrade ? '#3f6fb0' : Palette.crate;
-    this._round(ctx, -h, -h, s, s, 0.35);
+    // light box body
+    ctx.fillStyle = '#f1f1f3';
+    this._round(ctx, -h, -h, s, s, 0.4);
     ctx.fill();
-    // top bevel
-    ctx.fillStyle = isUpgrade ? '#5f93dd' : Palette.crateLight;
-    ctx.globalAlpha = 0.9;
-    this._round(ctx, -h + 0.18, -h + 0.16, s - 0.36, s * 0.32, 0.24);
+    // top highlight + bottom shade for a subtle 3D edge
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    this._round(ctx, -h + 0.16, -h + 0.14, s - 0.32, s * 0.3, 0.3);
     ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 0.2;
-    ctx.strokeStyle = Palette.outline;
-    this._round(ctx, -h, -h, s, s, 0.35);
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    this._round(ctx, -h + 0.16, h * 0.12, s - 0.32, s * 0.34, 0.3);
+    ctx.fill();
+    // dark rounded border
+    ctx.lineWidth = 0.18;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    this._round(ctx, -h, -h, s, s, 0.4);
     ctx.stroke();
-    // white badge for the icon → crisp, readable
-    ctx.fillStyle = 'rgba(255,255,255,0.94)';
-    ctx.beginPath();
-    ctx.arc(0, 0.12, s * 0.32, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 0.1;
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.stroke();
-    // dark glyph on the badge
+    // dark icon, drawn directly on the light face
     ctx.save();
-    ctx.translate(0, 0.12);
-    ctx.scale(0.8, 0.8);
-    ctx.fillStyle = '#2b2d33';
-    ctx.strokeStyle = '#2b2d33';
-    ctx.lineWidth = 0.2;
+    ctx.scale(0.92, 0.92);
+    ctx.fillStyle = '#33363c';
+    ctx.strokeStyle = '#33363c';
+    ctx.lineWidth = 0.22;
     this._glyph(ctx, kind);
     ctx.restore();
   }

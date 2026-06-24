@@ -23,40 +23,75 @@ export class MazeGenerator {
    */
   generate(playerCount) {
     const { width, height } = this._dimensions(playerCount);
-    const minTiles = playerCount * C.MAZE.MIN_TILES_PER_TANK;
-    const wantSpacing = C.MAZE.MIN_TILES_BETWEEN_TANKS;
-
-    let best = null; // best-effort maze if none fully satisfies spacing
-    let bestSpacing = -1;
-
-    for (let attempt = 0; attempt < 14; attempt++) {
-      // Bias later attempts toward fuller grids so we never starve on tiles.
-      const forceFull = attempt >= 9;
-      const tiles = this._noiseField(width, height, forceFull);
-      this._connect(tiles, width, height);
-      const present = this._largestComponent(tiles, width, height);
-      if (present.length < minTiles) continue;
-
-      const maze = new Maze(tiles);
-      maze.tankSpawns = this._placeSpawns(maze, present, playerCount);
-      if (maze.tankSpawns.length !== playerCount) continue;
-
-      // Original guarantees spawns are at least MIN_TILES_BETWEEN_TANKS apart.
-      const spacing = this._minSpawnSpacing(maze);
-      if (spacing >= wantSpacing) return maze;
-      if (spacing > bestSpacing) {
-        bestSpacing = spacing;
-        best = maze;
-      }
-    }
-
-    if (best) return best;
-
-    // Deterministic fallback: a full open grid always works.
-    const tiles = this._fullGrid(width, height);
+    const tiles = this._carveMaze(width, height);
     const maze = new Maze(tiles);
     maze.tankSpawns = this._placeSpawns(maze, maze.reachableTiles(), playerCount);
     return maze;
+  }
+
+  /**
+   * Carve a full rectangular grid into a maze: start fully walled, run a
+   * randomised depth-first backtracker (a perfect maze — every cell reachable),
+   * then "braid" by removing a share of interior walls to add loops and open
+   * chambers. This produces the original's tight-corridor, connected, slightly
+   * open arenas rather than a sparse blob of cells.
+   *
+   * tiles[x][y] = [present, topWall, leftWall]; outer south/east borders are
+   * derived from presence by the Maze class.
+   */
+  _carveMaze(width, height) {
+    const tiles = [];
+    for (let x = 0; x < width; x++) {
+      tiles.push([]);
+      for (let y = 0; y < height; y++) tiles[x][y] = [1, 1, 1]; // present, fully walled
+    }
+    const idx = (x, y) => x * height + y;
+    const openWall = (x, y, dx, dy) => {
+      if (dx === 1) tiles[x + 1][y][2] = 0; // right → target's left wall
+      else if (dx === -1) tiles[x][y][2] = 0; // left → own left wall
+      else if (dy === 1) tiles[x][y + 1][1] = 0; // down → target's top wall
+      else if (dy === -1) tiles[x][y][1] = 0; // up → own top wall
+    };
+
+    // Depth-first backtracker.
+    const visited = new Uint8Array(width * height);
+    const sx = this.rng.int(0, width - 1);
+    const sy = this.rng.int(0, height - 1);
+    const stack = [[sx, sy]];
+    visited[idx(sx, sy)] = 1;
+    const dirs = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    while (stack.length) {
+      const [x, y] = stack[stack.length - 1];
+      const opts = [];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < width && ny < height && !visited[idx(nx, ny)]) opts.push([dx, dy]);
+      }
+      if (opts.length === 0) {
+        stack.pop();
+        continue;
+      }
+      const [dx, dy] = opts[this.rng.int(0, opts.length - 1)];
+      openWall(x, y, dx, dy);
+      visited[idx(x + dx, y + dy)] = 1;
+      stack.push([x + dx, y + dy]);
+    }
+
+    // Braid: knock out extra interior walls for loops + open chambers.
+    const braid = 0.24;
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (y > 0 && tiles[x][y][1] === 1 && this.rng.next() < braid) tiles[x][y][1] = 0;
+        if (x > 0 && tiles[x][y][2] === 1 && this.rng.next() < braid) tiles[x][y][2] = 0;
+      }
+    }
+    return tiles;
   }
 
   /** Minimum pairwise tile-distance between chosen spawns (Infinity if <2). */
