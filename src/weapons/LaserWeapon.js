@@ -12,7 +12,7 @@ const CFG = C.WEAPONS.LASER;
 export class LaserWeapon extends Weapon {
   constructor() {
     super(WeaponType.LASER);
-    this.ammo = 3;
+    this.ammo = CFG.ammo;
     this._charging = false;
     this._lock = 0;
   }

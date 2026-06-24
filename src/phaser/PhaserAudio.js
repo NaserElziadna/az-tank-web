@@ -15,6 +15,7 @@ export class PhaserAudio {
       shotgun: this._howl(synthNoise(0.18, 2200), 0.4),
       explosion: this._howl(synthExplosion(), 0.5),
       bounce: this._howl(synthTone(880, 0.05, 'triangle'), 0.18),
+      thud: this._howl(synthThud(), 0.22),
       pickup: this._howl(synthPickup(), 0.3),
       beep: this._howl(synthTone(880, 0.1, 'square'), 0.25),
       go: this._howl(synthTone(990, 0.18, 'square'), 0.3),
@@ -22,6 +23,7 @@ export class PhaserAudio {
     this._unsub = [
       bus.on('weapon:fire', (e) => this.play(e?.weapon === 'shotgun' ? 'shotgun' : 'shot')),
       bus.on('projectile:bounce', () => this.play('bounce')),
+      bus.on('tank:bump', () => this.play('thud')),
       bus.on('tank:destroyed', () => this.play('explosion')),
       bus.on('mine:detonated', () => this.play('explosion')),
       bus.on('collectible:picked', () => this.play('pickup')),
@@ -145,6 +147,22 @@ function synthExplosion() {
     prev = prev + 0.05 * (white - prev);
     const low = Math.sin(t * (120 - 80 * (t / dur)) * 2 * Math.PI);
     s[i] = (prev * 0.6 + low * 0.4) * envelope(i, n, 0.005);
+  }
+  return toWav(s);
+}
+
+function synthThud() {
+  // Short, dull low-frequency knock for wall bumps.
+  const dur = 0.1;
+  const n = Math.floor(RATE * dur);
+  const s = new Float32Array(n);
+  let prev = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / RATE;
+    const white = Math.random() * 2 - 1;
+    prev = prev + 0.08 * (white - prev); // low-passed click
+    const low = Math.sin(t * (140 - 90 * (t / dur)) * 2 * Math.PI);
+    s[i] = (low * 0.7 + prev * 0.3) * envelope(i, n, 0.004);
   }
   return toWav(s);
 }

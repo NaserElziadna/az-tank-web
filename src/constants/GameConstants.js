@@ -37,7 +37,7 @@ export const C = Object.freeze({
   // speeds m/s, radii m, lifetimes s, offsets m.
   WEAPONS: Object.freeze({
     BULLET: { radius: 0.25, speed: 18, offset: 2.5, ammo: 5, maxLifetime: 10 },
-    LASER: { radius: 0, speed: 180, offset: 2.5, lockTime: 0.2, maxLifetime: 0.8, width: 0.2, aimerLength: 60 },
+    LASER: { radius: 0, speed: 180, offset: 2.5, lockTime: 0.2, maxLifetime: 0.8, width: 0.2, aimerLength: 60, ammo: 1 },
     DOUBLE_BARREL: { radius: 0.25, speed: 18, offset: 2.25, space: 0.45, ammo: 10, reload: 1.0, maxLifetime: 6 },
     SHOTGUN: {
       radius: 0.1, speedMin: 30, speedMax: 35, offset: 2.45, space: 0.4,
@@ -49,9 +49,9 @@ export const C = Object.freeze({
       ammo: 20, chargeTime: 0.5, fireRate: 0.12, dischargeTime: 1.5,
       maxLifetime: 2, spread: 0.1,
     },
-    HOMING: { radius: 0.2, speed: 18, offset: 2.5, accel: 40, activationTime: 2.0, maxLifetime: 10, ammo: 1 },
+    HOMING: { radius: 0.38, speed: 17, offset: 2.5, accel: 42, activationTime: 1.1, maxLifetime: 10, ammo: 1 },
     MINE: {
-      bodyRadius: 0.8, launchSpeed: 12.5, offset: -1.45, ammo: 3,
+      bodyRadius: 0.8, launchSpeed: 12.5, offset: -1.45, ammo: 1,
       activationDelay: 0.5, detonationDelay: 0.4,
       shrapnel: 30, shrapnelRadius: 0.1, shrapnelSpeedMin: 25, shrapnelSpeedMax: 35,
       triggerRadius: 1.4,
@@ -68,15 +68,15 @@ export const C = Object.freeze({
 
   // ── Maze ──────────────────────────────────────────────────────────────────
   MAZE: Object.freeze({
-    TILE_SIZE: 10.0, // m
+    TILE_SIZE: 7.0, // m — smaller blocks → tighter, more maze-like corridors
     WALL_WIDTH: 0.8, // m
-    BASE_WIDTH: 2,
-    WIDTH_FOR_PLAYERS: [0, 2, 4, 6, 8, 9, 10, 11, 12],
-    BASE_HEIGHT: 2,
-    HEIGHT_FOR_PLAYERS: [0, 1, 2, 3, 4, 5, 5, 6, 6],
-    MAX_RANDOM_MULTIPLIER: 1.5,
-    MAX_WIDTH: 16,
-    MAX_HEIGHT: 10,
+    BASE_WIDTH: 4,
+    WIDTH_FOR_PLAYERS: [0, 8, 9, 10, 11, 12, 13, 14, 15],
+    BASE_HEIGHT: 3,
+    HEIGHT_FOR_PLAYERS: [0, 6, 6, 7, 7, 8, 8, 9, 9],
+    MAX_RANDOM_MULTIPLIER: 1.4,
+    MAX_WIDTH: 18,
+    MAX_HEIGHT: 12,
     TILE_PROBABILITIES: [0.5, 0.7, 0.9, 0.9, 1.0],
     WALL_PROBABILITIES: [0.5, 0.8, 0.9, 1.0, 1.0],
     MIN_TILES_BETWEEN_TANKS: 4,
@@ -90,10 +90,10 @@ export const C = Object.freeze({
     GOLD_RADIUS: 1.75,
     DIAMOND_W: 2.2,
     DIAMOND_H: 3.8,
-    CRATE_SPAWN_MIN: 3.0,
-    CRATE_SPAWN_VARIANCE: 5.0,
+    CRATE_SPAWN_MIN: 2.5,
+    CRATE_SPAWN_VARIANCE: 4.0,
     CRATE_MIN_TILES_TO_TANKS: 4,
-    MAX_CRATES: 3,
+    MAX_CRATES: 4,
     GOLD_SPAWN_MIN: 20.0,
     GOLD_SPAWN_VARIANCE: 20.0,
     GOLD_MIN_TILES_TO_TANKS: 5,

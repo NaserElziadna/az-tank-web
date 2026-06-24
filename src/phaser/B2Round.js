@@ -38,6 +38,7 @@ class B2Tank {
     this.alive = true;
     this.stuck = false;
     this.treadOffset = 0;
+    this._bumpCd = 0; // throttle wall-bump dust/SFX
   }
 
   get activeWeapon() {
@@ -114,6 +115,7 @@ class B2Tank {
   }
 
   updateTimers(dt) {
+    if (this._bumpCd > 0) this._bumpCd -= dt;
     if (this.shield && (this.shield.time -= dt) <= 0) this.shield = null;
     if (this.speedBoost && (this.speedBoost.time -= dt) <= 0) this.speedBoost = null;
     if (this.aimer && (this.aimer.time -= dt) <= 0) this.aimer = null;
@@ -412,9 +414,23 @@ export class B2Round {
       const proj = objs.find((o) => o.kind === 'projectile');
       const tankObj = objs.find((o) => o.kind === 'tank');
       const colObj = objs.find((o) => o.kind === 'collectible');
+      const wallObj = objs.find((o) => o.kind === 'wall');
       if (proj && tankObj) this._projectileHitTank(proj.ref, tankObj.ref);
       else if (colObj && tankObj) this._pickup(colObj.ref, tankObj.ref);
+      else if (wallObj && tankObj) this._tankBump(tankObj.ref);
     }
+  }
+
+  /** Dust + thud when a tank drives into a wall (throttled per tank). */
+  _tankBump(tank) {
+    if (!tank || !tank.alive || tank._bumpCd > 0) return;
+    const drive = tank._drive || 0;
+    if (drive === 0) return; // only when actually pushing into the wall
+    tank._bumpCd = 0.16;
+    const dir = Math.sign(drive);
+    const x = tank.position.x + Math.cos(tank.rotation) * 1.9 * dir;
+    const y = tank.position.y + Math.sin(tank.rotation) * 1.9 * dir;
+    this.emit('tank:bump', { x, y });
   }
 
   _projectileHitTank(p, tank) {

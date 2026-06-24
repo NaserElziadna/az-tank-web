@@ -18,7 +18,7 @@ export class ProjectileRenderer {
       const y = p.prevPosition.y + (p.position.y - p.prevPosition.y) * alpha;
 
       if (p.kind === 'homing') {
-        this._missile(ctx, x, y, p.rotation, p.colorKey);
+        this._missile(ctx, x, y, p.rotation, p.colorKey, p.radius, p.activated);
       } else if (p.kind === 'shrapnel') {
         ctx.fillStyle = '#3a3a3a';
         ctx.beginPath();
@@ -71,30 +71,83 @@ export class ProjectileRenderer {
     }
   }
 
-  _missile(ctx, x, y, rot, color) {
+  /** A clearly-readable rocket: long body, nose cone, fins, coloured band and a
+   *  flickering exhaust flame. Scaled off the projectile radius so it's never a
+   *  tiny dot. `activated` brightens the flame once it's homing. */
+  _missile(ctx, x, y, rot, color, radius = 0.38, activated = false) {
+    const s = Math.max(radius / 0.38, 1); // base art tuned for r=0.38
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rot);
-    // flame
-    ctx.fillStyle = 'rgba(255,150,40,0.85)';
+    ctx.scale(s, s);
+
+    const len = 1.5; // nose-to-tail
+    const hw = 0.34; // half-width of the body
+    const nose = len * 0.55;
+    const tail = -len * 0.45;
+
+    // Exhaust flame (flickers; bigger + brighter once homing).
+    const flick = 0.7 + 0.3 * Math.abs(Math.sin(performance.now() / 40));
+    const flameLen = (activated ? 1.0 : 0.6) * flick;
+    ctx.fillStyle = 'rgba(255,210,90,0.95)';
     ctx.beginPath();
-    ctx.moveTo(-0.2, 0);
-    ctx.lineTo(-0.55, 0.14);
-    ctx.lineTo(-0.55, -0.14);
+    ctx.moveTo(tail, hw * 0.7);
+    ctx.lineTo(tail - flameLen, 0);
+    ctx.lineTo(tail, -hw * 0.7);
     ctx.closePath();
     ctx.fill();
-    // body
-    ctx.fillStyle = '#2b2b2b';
+    ctx.fillStyle = 'rgba(255,120,30,0.9)';
     ctx.beginPath();
-    ctx.moveTo(0.38, 0);
-    ctx.lineTo(-0.2, 0.16);
-    ctx.lineTo(-0.2, -0.16);
+    ctx.moveTo(tail, hw * 0.45);
+    ctx.lineTo(tail - flameLen * 0.6, 0);
+    ctx.lineTo(tail, -hw * 0.45);
     ctx.closePath();
     ctx.fill();
-    if (color) {
-      ctx.fillStyle = color.base;
-      ctx.fillRect(-0.12, -0.08, 0.16, 0.16);
-    }
+
+    // Tail fins.
+    ctx.fillStyle = color ? color.base : '#cc3030';
+    ctx.beginPath();
+    ctx.moveTo(tail + 0.18, hw);
+    ctx.lineTo(tail - 0.05, hw + 0.32);
+    ctx.lineTo(tail + 0.05, hw * 0.2);
+    ctx.closePath();
+    ctx.moveTo(tail + 0.18, -hw);
+    ctx.lineTo(tail - 0.05, -(hw + 0.32));
+    ctx.lineTo(tail + 0.05, -hw * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Body (rounded-end capsule).
+    ctx.fillStyle = '#e8eaee';
+    this._capsule(ctx, tail + 0.1, nose - 0.28, hw);
+    ctx.fill();
+    ctx.lineWidth = 0.08;
+    ctx.strokeStyle = '#2a2c31';
+    this._capsule(ctx, tail + 0.1, nose - 0.28, hw);
+    ctx.stroke();
+
+    // Nose cone.
+    ctx.fillStyle = color ? color.base : '#cc3030';
+    ctx.beginPath();
+    ctx.moveTo(nose, 0);
+    ctx.lineTo(nose - 0.42, hw);
+    ctx.lineTo(nose - 0.42, -hw);
+    ctx.closePath();
+    ctx.fill();
+
+    // Coloured ID band so you can tell whose rocket it is.
+    ctx.fillStyle = color ? color.base : '#cc3030';
+    ctx.fillRect(-0.05, -hw, 0.26, hw * 2);
     ctx.restore();
+  }
+
+  _capsule(ctx, x0, x1, hw) {
+    ctx.beginPath();
+    ctx.moveTo(x0 + hw, -hw);
+    ctx.lineTo(x1 - hw, -hw);
+    ctx.arc(x1 - hw, 0, hw, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(x0 + hw, hw);
+    ctx.arc(x0 + hw, 0, hw, Math.PI / 2, -Math.PI / 2);
+    ctx.closePath();
   }
 }

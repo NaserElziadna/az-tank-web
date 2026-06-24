@@ -100,7 +100,7 @@ export class PhaserRenderer {
       for (const p of round.projectiles) {
         const px = lerp(p.prevPosition.x, p.position.x, alpha);
         const py = lerp(p.prevPosition.y, p.position.y, alpha);
-        if (p.kind === 'homing' && p.activated) this.effects.trail(px, py);
+        if (p.kind === 'homing') this.effects.trail(px, py); // smoke from launch, not just after arming
         else if (p.kind === 'bullet' || p.kind === 'double') this.effects.bulletTrail(px, py, p.colorKey);
       }
       // Dust kicked up behind moving tanks (the original's tread effect).
