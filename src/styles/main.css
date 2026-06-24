@@ -396,3 +396,24 @@ body {
   transform: scale(0.92);
   filter: brightness(1.15);
 }
+.touch__ability {
+  right: calc(max(24px, env(safe-area-inset-right, 0px)) + 116px);
+  bottom: calc(max(24px, env(safe-area-inset-bottom, 0px)) + 8px);
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #06222b;
+  background: radial-gradient(circle at 50% 38%, #9be7ff, #36b6e0);
+  border: 3px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
+}
+.touch__ability.is-active {
+  transform: scale(0.9);
+  filter: brightness(1.2);
+}

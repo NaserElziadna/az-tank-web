@@ -191,6 +191,17 @@ export class Box2DWorld {
     if (body) this.world.DestroyBody(body);
   }
 
+  /** Add/remove maze walls from a tank's collision mask (phase ability). */
+  setTankMazeCollision(body, collide) {
+    if (!body) return;
+    const fx = body.GetFixtureList();
+    if (!fx) return;
+    const filter = fx.GetFilterData();
+    if (collide) filter.maskBits |= CAT.MAZE;
+    else filter.maskBits &= ~CAT.MAZE;
+    fx.SetFilterData(filter);
+  }
+
   /** Raycast helper returning the nearest fixture matching `mask`. */
   rayCast(x1, y1, x2, y2, mask = CAT.MAZE | CAT.TANK) {
     let best = null;

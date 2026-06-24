@@ -10,7 +10,8 @@ export const DEFAULT_SCHEMES = [
     left: 'ArrowLeft',
     right: 'ArrowRight',
     fire: 'KeyM',
-    labels: { move: '↑ ↓ ← →', fire: 'M' },
+    ability: 'Space',
+    labels: { move: '↑ ↓ ← →', fire: 'M', ability: 'Space' },
   },
   {
     forward: 'KeyE',
@@ -18,7 +19,8 @@ export const DEFAULT_SCHEMES = [
     left: 'KeyS',
     right: 'KeyF',
     fire: 'KeyQ',
-    labels: { move: 'E S D F', fire: 'Q' },
+    ability: 'KeyW',
+    labels: { move: 'E S D F', fire: 'Q', ability: 'W' },
   },
   {
     forward: 'KeyU',
@@ -26,7 +28,8 @@ export const DEFAULT_SCHEMES = [
     left: 'KeyH',
     right: 'KeyK',
     fire: 'KeyO',
-    labels: { move: 'U H J K', fire: 'O' },
+    ability: 'KeyI',
+    labels: { move: 'U H J K', fire: 'O', ability: 'I' },
   },
   {
     forward: 'Numpad8',
@@ -34,7 +37,8 @@ export const DEFAULT_SCHEMES = [
     left: 'Numpad4',
     right: 'Numpad6',
     fire: 'NumpadAdd',
-    labels: { move: 'Num 8 4 5 6', fire: 'Num +' },
+    ability: 'Numpad7',
+    labels: { move: 'Num 8 4 5 6', fire: 'Num +', ability: 'Num 7' },
   },
 ];
 

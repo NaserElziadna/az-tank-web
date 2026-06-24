@@ -175,6 +175,48 @@ export class CollectibleRenderer {
         ctx.lineTo(0, 0.7);
         ctx.stroke();
         break;
+      case 'megaLaser':
+        // thick beam with a burst tip
+        ctx.lineWidth = 0.34;
+        ctx.beginPath();
+        ctx.moveTo(-0.7, 0.2);
+        ctx.lineTo(0.4, -0.2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0.7, -0.3);
+        ctx.lineTo(0.25, -0.15);
+        ctx.lineTo(0.5, 0.2);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case 'rapidFire':
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.moveTo(-0.2 + i * 0.45, -0.45);
+          ctx.lineTo(0.25 + i * 0.45, 0);
+          ctx.lineTo(-0.2 + i * 0.45, 0.45);
+          ctx.stroke();
+        }
+        break;
+      case 'phase':
+        // dashed ghost ring
+        ctx.setLineDash([0.22, 0.18]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 0.55, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        break;
+      case 'recon':
+        // an eye
+        ctx.beginPath();
+        ctx.moveTo(-0.65, 0);
+        ctx.quadraticCurveTo(0, -0.6, 0.65, 0);
+        ctx.quadraticCurveTo(0, 0.6, -0.65, 0);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        break;
       default:
         break;
     }

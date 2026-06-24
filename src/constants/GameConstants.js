@@ -64,6 +64,15 @@ export const C = Object.freeze({
     lethal: 5,
   }),
 
+  // ── Activatable powerups (one-use, picked up from a crate, fired with the
+  //    ability key). Reuse the upgrade timers where it makes sense. ────────────
+  ABILITIES: Object.freeze({
+    MEGA_LASER: { range: 15, width: 0.55, damage: 3, maxLifetime: 0.5 }, // pierces walls, short range
+    RAPID_FIRE: { duration: 5.0, cooldown: 0.09, cap: 14 }, // fast auto bullets for a few seconds
+    PHASE: { duration: 3.5 }, // drive through walls
+    RECON: { duration: 6.0 }, // aimer + enemy highlight
+  }),
+
   // ── Upgrades ──────────────────────────────────────────────────────────────
   UPGRADES: Object.freeze({
     SHIELD: { radius: 4.3 / 2, lifetime: 6.0, weakenTime: 2.0 },

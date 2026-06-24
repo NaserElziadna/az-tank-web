@@ -40,12 +40,46 @@ class B2Tank {
     // Health: tanks now take damage instead of dying in one hit.
     this.maxHp = this.lethal ? C.HEALTH.lethal : C.HEALTH.normal;
     this.hp = this.maxHp;
+    // One-use activatable powerup held in a dedicated slot + its active timers.
+    this.ability = null; // kind string or null
+    this.rapidFireTimer = 0;
+    this.phaseTimer = 0;
+    this.phasing = false;
+    this.reconTimer = 0;
     this.locked = false;
     this.alive = true;
     this.stuck = false;
     this.treadOffset = 0;
     this.spawnAnim = 0; // 0→1 fade/scale-in
     this._bumpCd = 0; // throttle wall-bump dust/SFX
+  }
+
+  get hasAbility() {
+    return this.ability != null;
+  }
+  get abilityActive() {
+    return this.rapidFireTimer > 0 || this.phaseTimer > 0 || this.reconTimer > 0;
+  }
+  giveAbility(kind) {
+    this.ability = kind;
+  }
+  /** Fire the held one-use ability (consumed). */
+  activateAbility(sim) {
+    const kind = this.ability;
+    if (!kind) return;
+    this.ability = null;
+    sim.emit('ability:activate', { kind, slot: this.slot });
+    if (kind === 'megaLaser') {
+      sim.fireMegaLaser(this);
+    } else if (kind === 'rapidFire') {
+      this.rapidFireTimer = C.ABILITIES.RAPID_FIRE.duration;
+    } else if (kind === 'phase') {
+      this.phaseTimer = C.ABILITIES.PHASE.duration;
+      sim.setPhasing(this, true);
+    } else if (kind === 'recon') {
+      this.reconTimer = C.ABILITIES.RECON.duration;
+      this.aimer = { time: Math.max(this.aimer ? this.aimer.time : 0, C.ABILITIES.RECON.duration), length: C.UPGRADES.AIMER.length };
+    }
   }
 
   get activeWeapon() {
@@ -102,6 +136,8 @@ class B2Tank {
       this.body.SetAngularVelocity(0);
     }
     this._drive = drive;
+    // Activate the held one-use ability on the rising edge.
+    if (intent && intent.abilityPressed && this.ability) this.activateAbility(sim);
     // Fire control.
     if (intent && (!this.locked || this.activeWeapon.movementLocked?.())) {
       if (intent.fire) this.activeWeapon.onTriggerDown(this, sim);
@@ -123,9 +159,20 @@ class B2Tank {
     this.treadOffset += (this._drive * C.TANK.FORWARD_SPEED) * (1 / 60);
   }
 
-  updateTimers(dt) {
+  updateTimers(dt, sim) {
     if (this.spawnAnim < 1) this.spawnAnim = Math.min(1, this.spawnAnim + dt * 4); // ~0.25s
     if (this._bumpCd > 0) this._bumpCd -= dt;
+    if (this.rapidFireTimer > 0) this.rapidFireTimer -= dt;
+    if (this.reconTimer > 0) this.reconTimer -= dt;
+    if (this.phaseTimer > 0) {
+      this.phaseTimer -= dt;
+      if (this.phaseTimer <= 0) {
+        // Only solidify again once clear of walls, else stay ghostly a touch longer
+        // so we never re-materialise stuck inside a wall.
+        if (sim && sim._tankInWall(this)) this.phaseTimer = 0.12;
+        else if (sim) sim.setPhasing(this, false);
+      }
+    }
     if (this.shield && (this.shield.time -= dt) <= 0) this.shield = null;
     if (this.speedBoost && (this.speedBoost.time -= dt) <= 0) this.speedBoost = null;
     if (this.aimer && (this.aimer.time -= dt) <= 0) this.aimer = null;
@@ -399,7 +446,7 @@ export class B2Round {
     for (const p of this.projectiles) if (!p.dead) p.syncFromBody();
     for (const m of this.mines) if (!m.dead) m.syncFromBody();
     // 5. per-entity logic
-    for (const t of this.tanks) if (t.alive) t.updateTimers(dt);
+    for (const t of this.tanks) if (t.alive) t.updateTimers(dt, this);
     for (const p of this.projectiles) if (!p.dead) p.update(dt, this);
     for (const m of this.mines) if (!m.dead) m.update(dt, this);
     for (const c of this.collectibles) if (!c.dead) c.update(dt);
@@ -501,7 +548,10 @@ export class B2Round {
   _pickup(c, tank) {
     if (!c || !tank || c.dead || !tank.alive) return;
     if (c.category === CollectibleType.WEAPON_CRATE) {
-      if (WeaponFactory.isUpgrade(c.kind)) {
+      if (WeaponFactory.isAbility(c.kind)) {
+        if (tank.hasAbility) return; // one ability slot — keep the one we have
+        tank.giveAbility(c.kind);
+      } else if (WeaponFactory.isUpgrade(c.kind)) {
         const has = (c.kind === 'shield' && tank.shield) || (c.kind === 'aimer' && tank.aimer) || (c.kind === 'speedBoost' && tank.speedBoost);
         if (has) return;
         WeaponFactory.applyUpgrade(c.kind, tank);
@@ -550,6 +600,45 @@ export class B2Round {
       if (victim && !victim.hasActiveShield) this._damageTank(victim, cfg.damage, tank.slot);
     }
     this.beams.push({ points: trace.points, life: cfg.maxLifetime, max: cfg.maxLifetime, colorKey: tank.colorKey });
+  }
+
+  /** Mega-laser ability: a short straight beam that ignores walls and damages
+   *  every enemy tank along it (the wall-piercing close-range finisher). */
+  fireMegaLaser(tank) {
+    const cfg = C.ABILITIES.MEGA_LASER;
+    const m = tank.muzzle(C.TANK.BARREL_LENGTH);
+    const ex = m.x + Math.cos(tank.rotation) * cfg.range;
+    const ey = m.y + Math.sin(tank.rotation) * cfg.range;
+    const hitR = cfg.width + C.TANK.COLLISION_RADIUS;
+    for (const t of this.tanks) {
+      if (!t.alive || t.slot === tank.slot || t.hasActiveShield) continue;
+      if (segPointDist(t.position.x, t.position.y, m.x, m.y, ex, ey) <= hitR) {
+        this._damageTank(t, cfg.damage, tank.slot);
+      }
+    }
+    this.beams.push({ points: [{ x: m.x, y: m.y }, { x: ex, y: ey }], life: cfg.maxLifetime, max: cfg.maxLifetime, colorKey: tank.colorKey, mega: true });
+    this.emit('weapon:fire', { weapon: 'laser' });
+  }
+
+  /** Toggle whether a tank collides with maze walls (phase ability). */
+  setPhasing(tank, on) {
+    tank.phasing = on;
+    this.b2.setTankMazeCollision(tank.body, !on);
+  }
+
+  /** True if the tank's body circle currently overlaps any maze wall. */
+  _tankInWall(tank) {
+    const r = C.TANK.COLLISION_RADIUS;
+    const x = tank.position.x;
+    const y = tank.position.y;
+    for (const w of this.maze.walls) {
+      const cx = Math.max(w.minX, Math.min(x, w.maxX));
+      const cy = Math.max(w.minY, Math.min(y, w.maxY));
+      const dx = x - cx;
+      const dy = y - cy;
+      if (dx * dx + dy * dy < r * r) return true;
+    }
+    return false;
   }
 
   steerHomingMissile(proj, dt) {
@@ -628,4 +717,16 @@ export class B2Round {
     this._controllers.clear();
     this._bySlot.clear();
   }
+}
+
+/** Shortest distance from point (px,py) to segment (ax,ay)-(bx,by). */
+function segPointDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy || 1;
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
 }

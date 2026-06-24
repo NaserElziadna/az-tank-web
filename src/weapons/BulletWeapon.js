@@ -12,10 +12,27 @@ const CFG = C.WEAPONS.BULLET;
 export class BulletWeapon extends Weapon {
   constructor() {
     super(WeaponType.NORMAL);
+    this._cd = 0; // rapid-fire cadence cooldown
+  }
+
+  update(dt) {
+    if (this._cd > 0) this._cd -= dt;
   }
 
   _onPress(tank, sim) {
     if (sim.liveProjectileCount(tank.slot, 'bullet') >= (tank.bulletCap ?? CFG.ammo)) return;
+    this._spawn(tank, sim);
+  }
+
+  /** While the rapid-fire ability is active, stream bullets fast (held trigger). */
+  _onHold(tank, sim) {
+    if (!(tank.rapidFireTimer > 0) || this._cd > 0) return;
+    if (sim.liveProjectileCount(tank.slot, 'bullet') >= C.ABILITIES.RAPID_FIRE.cap) return;
+    this._cd = C.ABILITIES.RAPID_FIRE.cooldown;
+    this._spawn(tank, sim);
+  }
+
+  _spawn(tank, sim) {
     const muzzle = tank.muzzle(CFG.offset);
     sim.spawnProjectile({
       kind: 'bullet',

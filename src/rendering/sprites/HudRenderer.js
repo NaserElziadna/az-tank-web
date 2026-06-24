@@ -70,6 +70,12 @@ export class HudRenderer {
         ctx.font = '600 12px "Segoe UI", sans-serif';
         this._strokedText(ctx, weapon, cx, y + 34, '#ffe08a', 3);
       }
+      // held / active ability (human only)
+      const ability = opts.abilities && opts.abilities.get(p.slot);
+      if (ability) {
+        ctx.font = '700 11px "Segoe UI", sans-serif';
+        this._strokedText(ctx, ability, cx, y + 48, '#7fe7ff', 3);
+      }
       ctx.globalAlpha = 1;
     });
     ctx.restore();

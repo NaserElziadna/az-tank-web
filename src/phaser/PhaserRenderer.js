@@ -95,7 +95,25 @@ export class PhaserRenderer {
         // In-game tanks are top-down; the tankIcon PNGs are the 3/4 garage view,
         // so they're wrong here. Render the clean top-down vector tank instead.
         const view = this._tankView(tank, round, alpha);
-        this.tankR.draw(ctx, view, view.spawnAnim);
+        this.tankR.draw(ctx, view, view.spawnAnim * (view.phasing ? 0.42 : 1)); // ghostly while phasing
+      }
+      // Recon: a recon-holder's enemies get a pulsing highlight ring.
+      const reconHolders = round.tanks.filter((t) => t.alive && t.reconTimer > 0);
+      if (reconHolders.length) {
+        const pulse = 0.5 + 0.4 * Math.abs(Math.sin(performance.now() / 180));
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,70,70,${pulse})`;
+        ctx.lineWidth = 0.16;
+        for (const e of round.tanks) {
+          if (!e.alive) continue;
+          if (!reconHolders.some((h) => h.slot !== e.slot)) continue;
+          const ex = lerp(e.prevPosition.x, e.position.x, alpha);
+          const ey = lerp(e.prevPosition.y, e.position.y, alpha);
+          ctx.beginPath();
+          ctx.arc(ex, ey, C.TANK.COLLISION_RADIUS + 0.6, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
       // Trails: missiles smoke; main bullets leave a faint coloured streak.
       for (const p of round.projectiles) {
@@ -128,13 +146,16 @@ export class PhaserRenderer {
       // HUD (screen space).
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       const activeWeapons = new Map();
+      const abilities = new Map();
       for (const p of match.players) {
         if (p.isHuman && p.tank && p.tank.alive) {
           const wpn = p.tank.activeWeapon;
           activeWeapons.set(p.slot, `${weaponName(wpn.type)} ${wpn.hudLabel()}`.trim());
+          if (p.tank.abilityActive) abilities.set(p.slot, '◆ ACTIVE');
+          else if (p.tank.ability) abilities.set(p.slot, `◆ ${abilityName(p.tank.ability)}`);
         }
       }
-      this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons, compositor: this.compositor });
+      this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons, abilities, compositor: this.compositor });
     }
 
     this._overlay(ctx, match, w, h);
@@ -294,6 +315,7 @@ export class PhaserRenderer {
       rotation: rot,
       color: tank.colorKey,
       lethal: tank.lethal,
+      phasing: tank.phasing,
       hp: tank.hp,
       maxHp: tank.maxHp,
       spawnAnim: tank.spawnAnim ?? 1,
@@ -321,6 +343,9 @@ function size2(w) {
 }
 function weaponName(type) {
   return { normal: '', double: 'Double', shotgun: 'Shotgun', gatling: 'Gatling', homing: 'Missile', mine: 'Mines', laser: 'Laser' }[type] || '';
+}
+function abilityName(kind) {
+  return { megaLaser: 'Mega Laser', rapidFire: 'Rapid Fire', phase: 'Phase', recon: 'Recon' }[kind] || 'Power';
 }
 
 // Keep Palette referenced (used indirectly by the sprite renderers' colours).

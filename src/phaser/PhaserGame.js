@@ -96,13 +96,15 @@ export class PhaserGame {
   /** Merge keyboard + (optional) on-screen touch intent for one human. */
   _readHuman(controls, usesTouch) {
     const k = controls.read();
-    if (!usesTouch || !this.touch || !this.touch.active) return k;
-    const t = this.touch.read();
+    if (!usesTouch || !this.touch) return k;
+    const t = this.touch.read(); // always read so the touch ability edge is consumed
+    if (!this.touch.active && !t.abilityPressed) return k;
     return {
       drive: t.drive !== 0 ? t.drive : k.drive,
       turn: t.turn !== 0 ? t.turn : k.turn,
       fire: t.fire || k.fire,
       firePressed: false,
+      abilityPressed: t.abilityPressed || k.abilityPressed,
     };
   }
 

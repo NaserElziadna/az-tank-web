@@ -112,6 +112,7 @@ export class AIController {
         // Only charge forward when the lane is actually open (LOS) — never blind.
         if (los && enemy.worldDist > 14) intent.drive = 1;
         else if (los && enemy.worldDist > 8) intent.drive = 0.5;
+        intent.abilityPressed = this._abilityIntent(tank, enemy);
         return this._tryFire(tank, intent, dt, aim);
       }
     }
@@ -130,6 +131,7 @@ export class AIController {
       this.goal = 'hunt';
       const intent = this._follow(tank, sim, enemy.tile, myTile);
       if (aim) intent.turn = this._blendTurn(intent.turn, this._aimTurn(tank, aim.angle));
+      intent.abilityPressed = this._abilityIntent(tank, enemy);
       return intent;
     }
 
@@ -432,6 +434,19 @@ export class AIController {
       fire: false,
       firePressed: false,
     };
+  }
+
+  /** Decide whether to trigger the held one-use ability this frame. */
+  _abilityIntent(tank, enemy) {
+    if (!tank.ability || !enemy) return false;
+    if (tank.ability === 'megaLaser') {
+      // Only fire the short wall-piercing beam when the enemy is in range & in front.
+      const d = enemy.worldDist;
+      const ang = Math.abs(wrapAngle(Math.atan2(enemy.tank.position.y - tank.position.y, enemy.tank.position.x - tank.position.x) - tank.rotation));
+      return d <= C.ABILITIES.MEGA_LASER.range && ang < 0.45;
+    }
+    // rapidFire / phase / recon: pop them when engaging a reasonably close foe.
+    return enemy.worldDist < 26;
   }
 
   _aimTurn(tank, aimAngle) {

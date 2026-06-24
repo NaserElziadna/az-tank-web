@@ -6,6 +6,7 @@ import { InputManager } from './InputManager.js';
  * @property {number} turn   -1 (left) .. +1 (right)
  * @property {boolean} fire  fire held this step
  * @property {boolean} firePressed fire newly pressed this step (edge)
+ * @property {boolean} abilityPressed activate-ability newly pressed this step (edge)
  */
 
 /**
@@ -37,6 +38,7 @@ export class ControlScheme {
       turn,
       fire: i.isDown(b.fire),
       firePressed: i.wasPressed(b.fire),
+      abilityPressed: b.ability ? i.wasPressed(b.ability) : false,
     };
   }
 }
@@ -47,4 +49,5 @@ export const NEUTRAL_INTENT = Object.freeze({
   turn: 0,
   fire: false,
   firePressed: false,
+  abilityPressed: false,
 });

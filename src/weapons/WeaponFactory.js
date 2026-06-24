@@ -23,6 +23,16 @@ export const UpgradeKind = Object.freeze({
   SPEED_BOOST: 'speedBoost',
 });
 
+/** Crate-content keys for one-use activatable abilities (fired with the ability key). */
+export const AbilityKind = Object.freeze({
+  MEGA_LASER: 'megaLaser',
+  RAPID_FIRE: 'rapidFire',
+  PHASE: 'phase',
+  RECON: 'recon',
+});
+
+const ABILITY_SET = new Set(Object.values(AbilityKind));
+
 const WEAPON_CTORS = {
   [WeaponKind.LASER]: LaserWeapon,
   [WeaponKind.DOUBLE_BARREL]: DoubleBarrelWeapon,
@@ -52,6 +62,10 @@ export const WeaponFactory = {
     return kind === UpgradeKind.SHIELD || kind === UpgradeKind.AIMER || kind === UpgradeKind.SPEED_BOOST;
   },
 
+  isAbility(kind) {
+    return ABILITY_SET.has(kind);
+  },
+
   /** Apply an upgrade crate's effect directly to the tank. */
   applyUpgrade(kind, tank) {
     if (kind === UpgradeKind.SHIELD) tank.giveShield(false);
@@ -71,4 +85,8 @@ export const ALL_CRATES = [
   { kind: UpgradeKind.SHIELD, upgrade: true, label: 'Shield' },
   { kind: UpgradeKind.SPEED_BOOST, upgrade: true, label: 'Speed Boost' },
   { kind: UpgradeKind.AIMER, upgrade: true, label: 'Aimer' },
+  { kind: AbilityKind.MEGA_LASER, ability: true, label: 'Mega Laser' },
+  { kind: AbilityKind.RAPID_FIRE, ability: true, label: 'Rapid Fire' },
+  { kind: AbilityKind.PHASE, ability: true, label: 'Phase' },
+  { kind: AbilityKind.RECON, ability: true, label: 'Recon' },
 ];

@@ -16,6 +16,7 @@ export class TouchControls {
     this.drive = 0;
     this.turn = 0;
     this.fire = false;
+    this._abilityPressed = false; // edge, consumed on read()
     this._stickId = null;
     this._radius = 56; // px throw of the stick
     this._build(parent);
@@ -25,7 +26,8 @@ export class TouchControls {
     this.knob = el('div.touch__knob');
     this.stick = el('div.touch__stick', {}, [this.knob]);
     this.fireBtn = el('div.touch__fire', { text: 'FIRE' });
-    this.root = el('div.touch', {}, [this.stick, this.fireBtn]);
+    this.abilityBtn = el('div.touch__ability', { text: 'POWER' });
+    this.root = el('div.touch', {}, [this.stick, this.fireBtn, this.abilityBtn]);
     parent.appendChild(this.root);
 
     // ── stick ──
@@ -51,6 +53,17 @@ export class TouchControls {
     this.fireBtn.addEventListener('pointercancel', up);
     this.fireBtn.addEventListener('pointerleave', up);
     this._fireUp = up;
+
+    // ── ability button (edge-triggered: one activation per tap) ──
+    this.abilityBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this._abilityPressed = true;
+      this.abilityBtn.classList.add('is-active');
+    });
+    const aUp = () => this.abilityBtn.classList.remove('is-active');
+    this.abilityBtn.addEventListener('pointerup', aUp);
+    this.abilityBtn.addEventListener('pointercancel', aUp);
+    this.abilityBtn.addEventListener('pointerleave', aUp);
   }
 
   _stickStart(e) {
@@ -93,12 +106,14 @@ export class TouchControls {
 
   /** @returns {import('../core/input/ControlScheme.js').ControlIntent} */
   read() {
-    return { drive: this.drive, turn: this.turn, fire: this.fire, firePressed: false };
+    const abilityPressed = this._abilityPressed;
+    this._abilityPressed = false; // consume the edge
+    return { drive: this.drive, turn: this.turn, fire: this.fire, firePressed: false, abilityPressed };
   }
 
   /** True if the stick or fire button is currently engaged. */
   get active() {
-    return this.drive !== 0 || this.turn !== 0 || this.fire;
+    return this.drive !== 0 || this.turn !== 0 || this.fire || this._abilityPressed;
   }
 
   dispose() {

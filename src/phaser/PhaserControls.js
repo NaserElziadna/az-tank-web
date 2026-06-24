@@ -23,10 +23,13 @@ const CODE_TO_KEYCODE = {
   KeyJ: 74,
   KeyK: 75,
   KeyO: 79,
+  KeyW: 87,
+  KeyI: 73,
   Numpad8: 104,
   Numpad5: 101,
   Numpad4: 100,
   Numpad6: 102,
+  Numpad7: 103,
   NumpadAdd: 107,
 };
 
@@ -43,17 +46,23 @@ export class PhaserControls {
     this.left = key(bindings.left);
     this.right = key(bindings.right);
     this.fire = key(bindings.fire);
+    this.ability = bindings.ability ? key(bindings.ability) : null;
+    this._abilityPrev = false;
     // Stop arrows / space from scrolling the page.
     kb.addKeyCapture([37, 38, 39, 40, 32]);
   }
 
   /** @returns {import('../core/input/ControlScheme.js').ControlIntent} */
   read() {
+    const abilityDown = this.ability ? this.ability.isDown : false;
+    const abilityPressed = abilityDown && !this._abilityPrev; // rising edge
+    this._abilityPrev = abilityDown;
     return {
       drive: (this.forward.isDown ? 1 : 0) - (this.back.isDown ? 1 : 0),
       turn: (this.right.isDown ? 1 : 0) - (this.left.isDown ? 1 : 0),
       fire: this.fire.isDown,
       firePressed: false,
+      abilityPressed,
     };
   }
 }

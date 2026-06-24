@@ -73,18 +73,22 @@ export class ProjectileRenderer {
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      // soft outer halo → red → bright white core (a real-looking laser)
+      // Mega-laser reads as a thick violet wall-piercing beam; the normal laser is red.
+      const halo = b.mega ? '#c34bff' : '#ff2a2a';
+      const mid = b.mega ? '#d06bff' : '#ff3b3b';
+      const wide = b.mega ? 1.6 : 0.75;
+      const midW = b.mega ? 0.6 : 0.32;
       ctx.globalAlpha = a * 0.3;
-      ctx.strokeStyle = '#ff2a2a';
-      ctx.lineWidth = 0.75 * a + 0.12;
+      ctx.strokeStyle = halo;
+      ctx.lineWidth = wide * a + 0.12;
       path();
       ctx.globalAlpha = a * 0.85;
-      ctx.strokeStyle = '#ff3b3b';
-      ctx.lineWidth = 0.32 * a + 0.06;
+      ctx.strokeStyle = mid;
+      ctx.lineWidth = midW * a + 0.06;
       path();
       ctx.globalAlpha = a;
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 0.12 * a + 0.03;
+      ctx.lineWidth = (b.mega ? 0.2 : 0.12) * a + 0.03;
       path();
       ctx.restore();
     }
