@@ -610,6 +610,9 @@ body {
   filter: brightness(1.15);
 }
 .touch__ability {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
   right: calc(max(24px, env(safe-area-inset-right, 0px)) + 116px);
   bottom: calc(max(24px, env(safe-area-inset-bottom, 0px)) + 8px);
   width: 76px;
@@ -646,12 +649,13 @@ body {
     height: 92px;
     font-size: 16px;
   }
+  /* POWER: small, tucked just above-left of the FIRE button (never near Leave). */
   .touch__ability {
-    width: 66px;
-    height: 66px;
-    font-size: 12px;
-    right: calc(max(20px, env(safe-area-inset-right, 0px)) + 100px);
-    bottom: calc(max(24px, env(safe-area-inset-bottom, 0px)) + 26px);
+    width: 60px;
+    height: 60px;
+    font-size: 11px;
+    right: calc(max(20px, env(safe-area-inset-right, 0px)) + 96px);
+    bottom: calc(max(24px, env(safe-area-inset-bottom, 0px)) + 60px);
   }
 }
 
