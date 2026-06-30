@@ -61,6 +61,10 @@ export class App {
       clearInterval(this._pingTimer);
       this._pingTimer = null;
     }
+    if (this._hudTimer) {
+      clearInterval(this._hudTimer);
+      this._hudTimer = null;
+    }
     if (this.phaser) {
       this.phaser.destroy();
       this.phaser = null;
@@ -110,13 +114,14 @@ export class App {
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
     this.pingEl = el('span.topbar__ping', { text: '' });
     this.botToggleEl = el('button.topbar__bots', { text: '', on: { click: () => net.setFillBots(!this.onlineFillBots) } });
+    this._hudStrip = el('div.hud-strip');
     const topbar = el('div.topbar', {}, [
       el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.router.go('/') } }),
       el('span.topbar__spacer'),
       this.botToggleEl,
       this.pingEl,
     ]);
-    const root = el(this._gameTag(), {}, [el('div.game__stage-wrap', {}, [this.stage]), this.matchPanel, topbar, this._rotateHint()]);
+    const root = el(this._gameTag(), {}, [el('div.game__stage-wrap', {}, [this.stage]), this._hudStrip, this.matchPanel, topbar, this._rotateHint()]);
     // Tear down the lobby screen FIRST (while onlineNet is still unset, so its
     // teardown can't close the connection we're about to use), THEN claim net.
     this._setScreen(root);
@@ -152,6 +157,33 @@ export class App {
     // Live ping readout in the topbar.
     if (this._pingTimer) clearInterval(this._pingTimer);
     this._pingTimer = setInterval(() => this._refreshOnlineTopbar(), 1000);
+    this._startHudStrip(() => this.online);
+  }
+
+  /** Drive the compact mobile score strip from the active game's hudData(). */
+  _startHudStrip(getGame) {
+    if (this._hudTimer) clearInterval(this._hudTimer);
+    const tick = () => {
+      const game = getGame();
+      if (!game || !game.hudData || !this._hudStrip) return;
+      const data = game.hudData();
+      // Rebuild only when the displayed values change (cheap, avoids churn).
+      const sig = data.map((d) => `${d.slot}:${d.score}:${d.alive ? 1 : 0}`).join('|');
+      if (sig === this._hudSig) return;
+      this._hudSig = sig;
+      clear(this._hudStrip);
+      for (const d of data) {
+        const chip = el('div.hud-chip' + (d.alive ? '' : '.hud-chip--dead'), {}, [
+          el('span.hud-chip__dot', { style: { background: colorOf(d.color) } }),
+          el('span.hud-chip__name', { text: shortName(d.name) }),
+          el('span.hud-chip__score', { text: String(d.score) }),
+        ]);
+        this._hudStrip.appendChild(chip);
+      }
+    };
+    this._hudSig = null;
+    tick();
+    this._hudTimer = setInterval(tick, 300);
   }
 
   _refreshOnlineTopbar() {
@@ -235,11 +267,12 @@ export class App {
     // Build the in-game screen: a Phaser stage + top bar + match-over panel.
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
+    this._hudStrip = el('div.hud-strip');
     const topbar = el('div.topbar', {}, [
       el('button.btn--ghost', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
       el('span'),
     ]);
-    const root = el(this._gameTag(), {}, [el('div.game__stage-wrap', {}, [this.stage]), this.matchPanel, topbar, this._rotateHint()]);
+    const root = el(this._gameTag(), {}, [el('div.game__stage-wrap', {}, [this.stage]), this._hudStrip, this.matchPanel, topbar, this._rotateHint()]);
     this._setScreen(root);
 
     // Phaser reads the parent size on construction — the screen is now laid out.
@@ -249,6 +282,7 @@ export class App {
       version: VERSION,
       onMatchOver: (winner) => this._showMatchOver(winner, cfg),
     });
+    this._startHudStrip(() => this.phaser);
   }
 
   _showMatchOver(winner, cfg) {
@@ -271,4 +305,13 @@ export class App {
     this.matchPanel.style.display = 'none';
     if (this.phaser) this.phaser.restart();
   }
+}
+
+/** A palette entry ({base,…}) or a plain colour string → CSS colour. */
+function colorOf(c) {
+  if (!c) return '#fff';
+  return typeof c === 'string' ? c : c.base || c.accent || '#fff';
+}
+function shortName(n) {
+  return (n || '').length > 8 ? `${n.slice(0, 8)}…` : n || '';
 }

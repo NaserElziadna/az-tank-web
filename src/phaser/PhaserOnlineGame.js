@@ -91,7 +91,20 @@ export class PhaserOnlineGame {
     this.assets = new AssetStore();
     this.assets.load(320);
     this.compositor = new TankIconCompositor(this.assets);
-    this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor);
+    this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor, !isTouchDevice());
+  }
+
+  /** Compact scoreboard data for the DOM HUD strip (mobile). */
+  hudData() {
+    return (this.remote.players || []).map((p) => ({
+      slot: p.slot,
+      name: p.name,
+      color: p.color,
+      score: p.score,
+      alive: p.tank ? p.tank.alive : true,
+      hp: p.tank ? p.tank.hp : null,
+      maxHp: p.tank ? p.tank.maxHp : null,
+    }));
   }
 
   /** Sample local input and stream it to the server at a fixed rate. */
@@ -217,7 +230,10 @@ export class PhaserOnlineGame {
     let fire = k.fire;
     let ability = abilityHeld;
     if (this.touch && this.touch.active) {
-      const t = this.touch.read();
+      // Feed the stick our best-known heading so it steers "toward where I push".
+      const auth = this._authLocalTank();
+      const rot = this._pred ? this._pred.rot : auth ? auth.rot : undefined;
+      const t = this.touch.read(rot);
       if (t.drive !== 0) drive = t.drive;
       if (t.turn !== 0) turn = t.turn;
       fire = fire || t.fire;

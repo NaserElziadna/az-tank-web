@@ -59,6 +59,7 @@ export class PhaserGame {
     // On-screen controls (touch devices) drive the first human player; they're
     // merged with that player's keyboard so either input source works.
     const firstHumanSlot = this.setup.players.find((pc) => pc.controller === ControllerType.HUMAN)?.slot;
+    this._touchSlot = firstHumanSlot;
     if (firstHumanSlot != null && isTouchDevice()) {
       this.touch = new TouchControls(this.parentEl);
     }
@@ -87,17 +88,30 @@ export class PhaserGame {
     this.assets = new AssetStore();
     this.assets.load(320);
     this.compositor = new TankIconCompositor(this.assets);
-    this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor);
+    this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor, !isTouchDevice());
     this.match = new B2Match(this.bus);
     this.match.configure(players, { pointsToWin: this.setup.pointsToWin, humanControllers });
     this.match.start();
+  }
+
+  /** Compact scoreboard data for the DOM HUD strip (mobile). */
+  hudData() {
+    return (this.match ? this.match.players : []).map((p) => ({
+      slot: p.slot,
+      name: p.name,
+      color: p.color,
+      score: p.score,
+      alive: p.tank ? p.tank.alive : true,
+      hp: p.tank ? p.tank.hp : null,
+      maxHp: p.tank ? p.tank.maxHp : null,
+    }));
   }
 
   /** Merge keyboard + (optional) on-screen touch intent for one human. */
   _readHuman(controls, usesTouch) {
     const k = controls.read();
     if (!usesTouch || !this.touch) return k;
-    const t = this.touch.read(); // always read so the touch ability edge is consumed
+    const t = this.touch.read(this._touchTankRot()); // always read so the touch ability edge is consumed
     if (!this.touch.active && !t.abilityPressed) return k;
     return {
       drive: t.drive !== 0 ? t.drive : k.drive,
@@ -106,6 +120,14 @@ export class PhaserGame {
       firePressed: false,
       abilityPressed: t.abilityPressed || k.abilityPressed,
     };
+  }
+
+  /** Current heading of the touch-driven tank, or undefined if it's not in play. */
+  _touchTankRot() {
+    const round = this.match && this.match.round;
+    if (!round || this._touchSlot == null) return undefined;
+    const tank = round.tanks.find((t) => t.slot === this._touchSlot);
+    return tank && tank.alive ? tank.rotation : undefined;
   }
 
   _update() {

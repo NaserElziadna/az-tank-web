@@ -39,7 +39,7 @@ export class PhaserRenderer {
    * @param {import('./AssetStore.js').AssetStore} [assets]
    * @param {import('./TankIconCompositor.js').TankIconCompositor} [compositor]
    */
-  constructor(game, bus, version = 'v1.0', assets = null, compositor = null) {
+  constructor(game, bus, version = 'v1.0', assets = null, compositor = null, drawHud = true) {
     this.game = game;
     this.assets = assets;
     this.compositor = compositor;
@@ -51,6 +51,10 @@ export class PhaserRenderer {
     this.hud = new HudRenderer();
     this.effects = new EffectsLayer(bus);
     this.version = version;
+    // When false (mobile), the in-canvas scoreboard is omitted and the arena
+    // uses the full canvas; a compact DOM score strip is shown instead.
+    this.drawHud = drawHud;
+    this.hudHeight = drawHud ? HUD_HEIGHT : 0;
     this.shake = 0;
     bus.on('tank:destroyed', () => (this.shake = Math.max(this.shake, 14)));
     bus.on('mine:detonated', () => (this.shake = Math.max(this.shake, 7)));
@@ -76,7 +80,7 @@ export class PhaserRenderer {
 
     const round = match.sim;
     if (round) {
-      this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - HUD_HEIGHT, 26);
+      this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - this.hudHeight, 26);
       let ox = this.camera.offsetX;
       let oy = this.camera.offsetY;
       if (this.shake > 0) {
@@ -143,19 +147,21 @@ export class PhaserRenderer {
       // Screen-space vignette to frame the arena and add depth.
       this._drawVignette(ctx, w, h);
 
-      // HUD (screen space).
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      const activeWeapons = new Map();
-      const abilities = new Map();
-      for (const p of match.players) {
-        if (p.isHuman && p.tank && p.tank.alive) {
-          const wpn = p.tank.activeWeapon;
-          activeWeapons.set(p.slot, `${weaponName(wpn.type)} ${wpn.hudLabel()}`.trim());
-          if (p.tank.abilityActive) abilities.set(p.slot, '◆ ACTIVE');
-          else if (p.tank.ability) abilities.set(p.slot, `◆ ${abilityName(p.tank.ability)}`);
+      // HUD (screen space) — omitted on mobile, where a DOM score strip is used.
+      if (this.drawHud) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const activeWeapons = new Map();
+        const abilities = new Map();
+        for (const p of match.players) {
+          if (p.isHuman && p.tank && p.tank.alive) {
+            const wpn = p.tank.activeWeapon;
+            activeWeapons.set(p.slot, `${weaponName(wpn.type)} ${wpn.hudLabel()}`.trim());
+            if (p.tank.abilityActive) abilities.set(p.slot, '◆ ACTIVE');
+            else if (p.tank.ability) abilities.set(p.slot, `◆ ${abilityName(p.tank.ability)}`);
+          }
         }
+        this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons, abilities, compositor: this.compositor });
       }
-      this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons, abilities, compositor: this.compositor });
     }
 
     this._overlay(ctx, match, w, h);

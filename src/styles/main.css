@@ -454,13 +454,20 @@ body {
 .game__stage-wrap {
   position: absolute;
   inset: 0;
+  overflow: hidden;
 }
 .game__stage {
   flex: 1;
+  /* Definite size: in the .game__stage-wrap path the parent isn't a flex
+     container, so flex:1 alone leaves height auto (~0) and Phaser falls back to
+     a 600px canvas that overflows the viewport. inset:0 fills the wrapper. */
+  position: absolute;
+  inset: 0;
   width: 100%;
-  position: relative;
+  height: 100%;
   display: grid;
   place-items: center;
+  overflow: hidden;
   min-height: 0;
 }
 /* On touch devices the on-screen joystick/fire live in a reserved bottom band,
@@ -695,57 +702,160 @@ body {
   50% { transform: rotate(78deg); }
 }
 
-/* ── Responsive: small / short viewports ──────────────────────────────────── */
-@media (max-width: 760px), (max-height: 560px) {
-  /* Let non-game screens scroll instead of clipping tall content. */
+/* ── Mobile in-game score strip (replaces the canvas HUD on touch) ─────────── */
+.hud-strip {
+  display: none;
+}
+.game--touch .hud-strip {
+  display: flex;
+  position: absolute;
+  top: calc(6px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 6px;
+  z-index: 6;
+  pointer-events: none;
+  max-width: 64vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.hud-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(18, 20, 26, 0.62);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-weight: 800;
+  color: #fff;
+}
+.hud-chip--dead {
+  opacity: 0.4;
+}
+.hud-chip__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.hud-chip__name {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hud-chip__score {
+  font-size: 13px;
+}
+
+/* ── Fit-to-frame: screens never scroll; content scales to the viewport ─────
+   Mobile-native feel — everything sized in vmin/clamp so menu, lobby and setup
+   fit a phone in BOTH portrait and landscape without a scrollbar. */
+@media (max-width: 760px), (max-height: 620px) {
   .screen:not(.game) {
-    justify-content: flex-start;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 22px 14px calc(22px + env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+    padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
   }
   .menu {
-    gap: 16px;
+    gap: clamp(10px, 2.5vh, 22px);
+  }
+  .menu__logo .tank {
+    font-size: clamp(38px, 11vmin, 88px);
+  }
+  .menu__logo .trouble {
+    font-size: clamp(24px, 7vmin, 60px);
   }
   .menu__tagline {
-    font-size: 14px;
+    font-size: 13px;
   }
-}
-@media (max-width: 560px) {
+  /* The room-code logo doesn't need to be huge. */
+  .online .menu__logo .tank {
+    font-size: clamp(26px, 7vmin, 52px);
+  }
+  .online .menu__logo .trouble {
+    font-size: clamp(22px, 6vmin, 44px);
+  }
   .online {
-    width: 94vw;
-    gap: 12px;
+    width: min(560px, 94vw);
+    gap: clamp(8px, 1.6vh, 16px);
   }
-  .online__seats {
-    grid-template-columns: 1fr;
-    gap: 8px;
+  .online__seat {
+    padding: 10px 14px;
+  }
+  .online__seat-name {
+    font-size: 15px;
   }
   .online__option {
-    flex-direction: column;
-    gap: 6px;
+    gap: 10px;
   }
-  .online__option-label {
-    min-width: 0;
-    text-align: center;
-  }
-  .online__row {
-    flex-wrap: wrap;
-  }
+}
+
+/* Portrait phones: keep 2×2 seats (shorter than a single column). */
+@media (max-width: 560px) and (orientation: portrait) {
   .menu__actions .btn,
   .menu__actions .btn--lethal,
   .menu__actions .btn--online {
     width: min(340px, 88vw);
   }
-  /* Comfortable tap targets. */
   .btn {
-    padding: 16px 28px;
-  }
-  .online__chip {
-    padding: 10px 18px;
+    padding: 14px 26px;
   }
 }
+
+/* Landscape phones (short height): dense layout, hide non-essentials,
+   seats in a single row — fits ~300px tall without scrolling. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .online {
+    width: min(96vw, 820px);
+    gap: 6px;
+  }
+  .online .menu__tagline,
+  .online__copy {
+    display: none; /* reclaim vertical space */
+  }
+  .online__seats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .online__seat {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 6px 10px;
+  }
+  .online__seat-name {
+    font-size: 13px;
+  }
+  .online__toggle {
+    padding: 6px 16px;
+    font-size: 13px;
+  }
+  .online__chip {
+    padding: 4px 12px;
+    font-size: 13px;
+  }
+  .menu__actions {
+    flex-direction: row;
+    gap: 12px;
+  }
+  .btn {
+    padding: 10px 24px;
+    font-size: 16px;
+  }
+  /* Landscape menu: shrink the big logo so the buttons stay on-screen. */
+  .menu__logo .tank {
+    font-size: clamp(30px, 12vh, 64px);
+  }
+  .menu__logo .trouble {
+    font-size: clamp(20px, 8vh, 44px);
+  }
+}
+
 /* In-game topbar stays compact on phones. */
-@media (max-width: 560px) {
+@media (max-width: 620px) {
   .topbar {
     top: 8px;
     left: 8px;
