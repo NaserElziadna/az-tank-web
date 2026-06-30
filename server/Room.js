@@ -53,6 +53,8 @@ export class Room {
     this.hostId = null;
     this.started = false;
     this.fillBots = true; // host-controlled; default keeps the arena full
+    this.difficulty = Difficulty.HARD; // bot skill (host-controlled)
+    this.pointsToWin = POINTS_TO_WIN; // host-controlled (lobby only)
     this.bus = new EventBus();
     this.match = null;
     /** @type {Map<number, NetController>} */
@@ -157,7 +159,8 @@ export class Room {
         humanControllers.set(slot, ctrl);
         players.push(new Player({ slot, name: human.name, controller: ControllerType.HUMAN, color: colorForSlot(slot) }));
       } else if (this.fillBots) {
-        players.push(new Player({ slot, name: `Bot ${slot + 1}`, controller: ControllerType.AI, color: colorForSlot(slot), difficulty: Difficulty.HARD }));
+        const lethal = this.difficulty === Difficulty.LETHAL;
+        players.push(new Player({ slot, name: `Bot ${slot + 1}`, controller: ControllerType.AI, color: colorForSlot(slot), difficulty: this.difficulty, lethal }));
       }
     }
     return { players, humanControllers };
@@ -182,6 +185,21 @@ export class Room {
     this._broadcastRoomState();
   }
 
+  /** Host sets bot difficulty (any time → next round) and points-to-win (lobby only). */
+  setSettings({ difficulty, pointsToWin }, byId) {
+    if (byId !== this.hostId) return;
+    if (difficulty && Object.values(Difficulty).includes(difficulty)) {
+      this.difficulty = difficulty;
+      if (this.started) this._applyRosterToMatch();
+    }
+    if (pointsToWin && !this.started) {
+      const n = Math.max(1, Math.min(20, Math.round(pointsToWin)));
+      this.pointsToWin = n;
+    }
+    rlog.info('settings', { code: this.code, difficulty: this.difficulty, pointsToWin: this.pointsToWin, started: this.started });
+    this._broadcastRoomState();
+  }
+
   start(byId) {
     if (this.started || byId !== this.hostId) return false;
     return this._beginMatch();
@@ -198,7 +216,7 @@ export class Room {
     const { players, humanControllers } = this._buildRoster();
 
     this.match = new B2Match(this.bus);
-    this.match.configure(players, { pointsToWin: POINTS_TO_WIN, humanControllers });
+    this.match.configure(players, { pointsToWin: this.pointsToWin, humanControllers });
     this.match.start(); // emits round:created → _broadcastRoundStart
 
     this._matchOverSent = false;
@@ -274,7 +292,16 @@ export class Room {
 
   // ── broadcast helpers ──────────────────────────────────────────────────────
   _broadcastRoomState() {
-    this.broadcast({ t: MSG.ROOM_STATE, code: this.code, started: this.started, maxSlots: MAX_SLOTS, fillBots: this.fillBots, members: this.roster() });
+    this.broadcast({
+      t: MSG.ROOM_STATE,
+      code: this.code,
+      started: this.started,
+      maxSlots: MAX_SLOTS,
+      fillBots: this.fillBots,
+      difficulty: this.difficulty,
+      pointsToWin: this.pointsToWin,
+      members: this.roster(),
+    });
   }
 
   _broadcastRoundStart() {

@@ -18,6 +18,7 @@ export const MSG = Object.freeze({
   LEAVE_ROOM: 'leaveRoom',
   START_MATCH: 'startMatch',
   SET_FILL_BOTS: 'setFillBots', // host toggles AI filling empty seats (lobby + in-game)
+  SET_SETTINGS: 'setSettings', // host sets bot difficulty / points-to-win
   INPUT: 'input',
   PING: 'ping',
   // server → client

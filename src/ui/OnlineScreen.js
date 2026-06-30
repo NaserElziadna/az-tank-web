@@ -18,6 +18,8 @@ export class OnlineScreen {
     this.isHost = false;
     this.members = [];
     this.fillBots = true;
+    this.difficulty = 'hard';
+    this.pointsToWin = 5;
     this._launched = false;
 
     this.root = el('div.screen.menu', {}, []);
@@ -77,6 +79,8 @@ export class OnlineScreen {
         el('p.menu__tagline', { text: this.fillBots ? 'Share this code with friends. Empty seats play as bots.' : 'Share this code with friends. Empty seats stay open.' }),
         el('div.online__seats', {}, seats),
         this._botToggle(),
+        this._optionRow('Bot skill', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['lethal', 'Lethal']], this.difficulty, (v) => this.net.setSettings({ difficulty: v })),
+        this._optionRow('First to', [[3, '3'], [5, '5'], [10, '10']], this.pointsToWin, (v) => this.net.setSettings({ pointsToWin: v }), this.started),
         el('div.menu__actions', {}, [
           this.isHost
             ? el('button.btn', { text: '▶  Start Match', on: { click: () => this.net.startMatch() } })
@@ -92,6 +96,21 @@ export class OnlineScreen {
     const label = `Fill empty seats with bots:  ${this.fillBots ? 'ON' : 'OFF'}`;
     if (!this.isHost) return el('p.online__hint', { text: this.fillBots ? 'Empty seats are bots.' : 'Empty seats stay open.' });
     return el('button', { class: `online__toggle ${this.fillBots ? 'online__toggle--on' : 'online__toggle--off'}`, text: label, on: { click: () => this.net.setFillBots(!this.fillBots) } });
+  }
+
+  /**
+   * A labelled row of selectable chips. Host can pick; everyone sees the current
+   * value highlighted. `disabled` greys it out (e.g. points-to-win after start).
+   * @param {[any,string][]} options [value, label] pairs
+   */
+  _optionRow(label, options, current, onPick, disabled = false) {
+    const chips = options.map(([value, text]) => {
+      const active = value === current;
+      const cls = `online__chip${active ? ' online__chip--active' : ''}`;
+      const interactive = this.isHost && !disabled;
+      return el('button', { class: cls, text, disabled: interactive ? null : 'disabled', on: interactive ? { click: () => onPick(value) } : {} });
+    });
+    return el('div.online__option', {}, [el('span.online__option-label', { text: label }), el('div.online__chips', {}, chips)]);
   }
 
   // ── networking ─────────────────────────────────────────────────────────────
@@ -119,6 +138,9 @@ export class OnlineScreen {
     this.net.on('roomState', (m) => {
       this.members = m.members || [];
       if (typeof m.fillBots === 'boolean') this.fillBots = m.fillBots;
+      if (m.difficulty) this.difficulty = m.difficulty;
+      if (m.pointsToWin) this.pointsToWin = m.pointsToWin;
+      if (typeof m.started === 'boolean') this.started = m.started;
       const me = this.members.find((x) => x.slot === this.localSlot);
       if (me) this.isHost = me.isHost;
       if (this.code && !this._launched) this._renderLobby();

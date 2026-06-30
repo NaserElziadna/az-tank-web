@@ -116,6 +116,10 @@ function handle(ws, conn, msg) {
       conn.room?.setFillBots(!!msg.on, conn.id);
       break;
     }
+    case MSG.SET_SETTINGS: {
+      conn.room?.setSettings({ difficulty: msg.difficulty, pointsToWin: msg.pointsToWin }, conn.id);
+      break;
+    }
     case MSG.INPUT: {
       conn.room?.setInput(conn.id, msg);
       break;

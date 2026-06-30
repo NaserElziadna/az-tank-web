@@ -115,6 +115,9 @@ export class NetClient {
   setFillBots(on) {
     this.send({ t: MSG.SET_FILL_BOTS, on });
   }
+  setSettings(settings) {
+    this.send({ t: MSG.SET_SETTINGS, ...settings });
+  }
   leaveRoom() {
     this.send({ t: MSG.LEAVE_ROOM });
   }
