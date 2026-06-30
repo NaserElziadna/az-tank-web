@@ -28,6 +28,23 @@ export class Camera {
     this.offsetY = (viewH - worldH * this.scale) / 2;
   }
 
+  /**
+   * Zoom-and-follow: center on a focus point at a fixed scale, clamped so the
+   * arena always fills the view (no empty space past the walls). Used on mobile
+   * so the player's tank is large and readable instead of a tiny full-arena dot.
+   */
+  follow(focusX, focusY, worldW, worldH, viewW, viewH, scale) {
+    this.scale = scale;
+    const w = worldW * scale;
+    const h = worldH * scale;
+    let ox = viewW / 2 - focusX * scale;
+    let oy = viewH / 2 - focusY * scale;
+    ox = w <= viewW ? (viewW - w) / 2 : Math.min(0, Math.max(viewW - w, ox));
+    oy = h <= viewH ? (viewH - h) / 2 : Math.min(0, Math.max(viewH - h, oy));
+    this.offsetX = ox;
+    this.offsetY = oy;
+  }
+
   worldToScreenX(x) {
     return this.offsetX + x * this.scale;
   }

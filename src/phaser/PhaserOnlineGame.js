@@ -92,6 +92,7 @@ export class PhaserOnlineGame {
     this.assets.load(320);
     this.compositor = new TankIconCompositor(this.assets);
     this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor, !isTouchDevice());
+    this.renderer.focusSlot = this.localSlot; // mobile camera follows our tank
   }
 
   /** Compact scoreboard data for the DOM HUD strip (mobile). */

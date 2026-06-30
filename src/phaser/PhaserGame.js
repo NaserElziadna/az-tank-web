@@ -89,6 +89,7 @@ export class PhaserGame {
     this.assets.load(320);
     this.compositor = new TankIconCompositor(this.assets);
     this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor, !isTouchDevice());
+    this.renderer.focusSlot = firstHumanSlot ?? null; // mobile camera follows the local player
     this.match = new B2Match(this.bus);
     this.match.configure(players, { pointsToWin: this.setup.pointsToWin, humanControllers });
     this.match.start();

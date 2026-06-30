@@ -55,6 +55,8 @@ export class PhaserRenderer {
     // uses the full canvas; a compact DOM score strip is shown instead.
     this.drawHud = drawHud;
     this.hudHeight = drawHud ? HUD_HEIGHT : 0;
+    // On mobile (drawHud=false) the camera zooms in and follows this slot's tank.
+    this.focusSlot = null;
     this.shake = 0;
     bus.on('tank:destroyed', () => (this.shake = Math.max(this.shake, 14)));
     bus.on('mine:detonated', () => (this.shake = Math.max(this.shake, 7)));
@@ -80,7 +82,15 @@ export class PhaserRenderer {
 
     const round = match.sim;
     if (round) {
-      this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - this.hudHeight, 26);
+      const viewH = h - this.hudHeight;
+      const focus = !this.drawHud && this.focusSlot != null ? round.tanks.find((t) => t.slot === this.focusSlot) : null;
+      if (focus) {
+        // Zoom so ~5.5 tiles are visible; the camera follows the tank, clamped to the arena.
+        const followScale = viewH > 0 ? viewH / (5.5 * C.MAZE.TILE_SIZE) : 14;
+        this.camera.follow(focus.position.x, focus.position.y, round.maze.worldWidth, round.maze.worldHeight, w, viewH, followScale);
+      } else {
+        this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, viewH, 26);
+      }
       let ox = this.camera.offsetX;
       let oy = this.camera.offsetY;
       if (this.shake > 0) {
