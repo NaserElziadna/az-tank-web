@@ -12,32 +12,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const LOG_DIR = path.join(__dirname, '..', 'logs');
 export const LOG_FILE = path.join(LOG_DIR, 'az-tank.log');
 
-let stream = null;
+let ready = false;
 
-function ensureStream() {
-  if (stream) return stream;
+function ensureDir() {
+  if (ready) return;
   fs.mkdirSync(LOG_DIR, { recursive: true });
-  stream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
-  return stream;
+  ready = true;
 }
 
 /** Truncate the log at server boot so each run starts clean. */
 export function resetLogFile() {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
+  ensureDir();
   fs.writeFileSync(LOG_FILE, '');
-  if (stream) {
-    stream.end();
-    stream = null;
-  }
 }
 
-/** A sink function for Logger.setSink(): file + stdout mirror. */
+/**
+ * A sink function for Logger.setSink(): file + stdout mirror. Uses a synchronous
+ * append so the on-disk file is ALWAYS current — a buffered write stream (made
+ * worse by OneDrive sync) can otherwise serve a stale/empty read when inspected
+ * on demand, which defeats the purpose of the log.
+ */
 export function fileSink(entry) {
-  const line = formatEntry(entry);
+  const line = formatEntry(entry) + '\n';
   try {
-    ensureStream().write(line + '\n');
+    ensureDir();
+    fs.appendFileSync(LOG_FILE, line);
   } catch {
     /* ignore file errors */
   }
-  process.stdout.write(line + '\n');
+  process.stdout.write(line);
 }

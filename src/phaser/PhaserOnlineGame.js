@@ -42,7 +42,8 @@ export class PhaserOnlineGame {
     // subscribed, so apply it directly to avoid waiting for the next round.
     if (initialRound) this.remote.onRoundStart(initialRound);
 
-    this._noSnapWarned = false;
+    this._starve = 0;
+    this._starveWarned = false;
     this._unsub = [
       net.on('roundStart', (m) => this.remote.onRoundStart(m)),
       net.on('snapshot', (m) => this.remote.pushSnapshot(m)),
@@ -95,12 +96,15 @@ export class PhaserOnlineGame {
     }
     if (this.renderer) this.renderer.update(dt);
 
-    // Watchdog: a round exists but no snapshots are arriving → the symptom of a
-    // dead server loop or a closed socket. Log it once so it shows in the file.
-    this._aliveTime = (this._aliveTime || 0) + dt;
-    if (!this._noSnapWarned && this._aliveTime > 2 && this.remote.round && this.remote._buf.length === 0) {
-      this._noSnapWarned = true;
-      glog.warn('no snapshots after 2s', { netOpen: this.net.ws?.readyState, rtt: this.net.rtt });
+    // Starvation watchdog: warn only on *sustained* snapshot loss. A new round
+    // momentarily empties the buffer (onRoundStart) — that's not starvation, so
+    // we require the buffer to stay empty for >2.5s, and re-arm once healthy.
+    if (this.remote.round && this.remote._buf.length === 0) this._starve += dt;
+    else this._starve = 0;
+    if (this.remote._buf.length > 0) this._starveWarned = false;
+    if (this._starve > 2.5 && !this._starveWarned) {
+      this._starveWarned = true;
+      glog.warn('snapshot starvation >2.5s', { netOpen: this.net.ws?.readyState, rtt: this.net.rtt, round: this.remote.roundNumber });
     }
   }
 
