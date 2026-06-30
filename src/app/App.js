@@ -1,4 +1,5 @@
 import { EventBus } from '../core/events/EventBus.js';
+import { Router } from './Router.js';
 import { MenuScreen } from '../ui/MenuScreen.js';
 import { SetupScreen } from '../ui/SetupScreen.js';
 import { OnlineScreen } from '../ui/OnlineScreen.js';
@@ -16,9 +17,10 @@ const VERSION = 'v2.0';
 /**
  * Top-level application for the original-libraries build.
  *
- * The menu and setup screens are plain DOM (mirroring the original's
- * jQuery-driven lobby); the in-game experience is a Phaser CE game running the
- * box2dweb simulation. The app owns navigation and the howler-backed audio.
+ * Navigation is hash-routed (see {@link Router}): #/ menu, #/play local setup,
+ * #/online entry, #/room/CODE a specific room (shareable link), #/lethal duel.
+ * Menu/setup/online screens are plain DOM; the in-game experience is a Phaser CE
+ * game running the box2dweb simulation. The app owns audio and screen rendering.
  */
 export class App {
   /** @param {HTMLElement} mount */
@@ -28,7 +30,19 @@ export class App {
     this.audio = new PhaserAudio(this.bus);
     /** @type {PhaserGame|null} */
     this.phaser = null;
-    this.showMenu();
+    this.router = new Router((r) => this._route(r));
+    this.router.start();
+  }
+
+  /** Render the screen for the current route. */
+  _route(r) {
+    alog.info('route', { path: r.path });
+    const seg = r.segments[0];
+    if (seg === 'play') return this.showSetup();
+    if (seg === 'lethal') return this.startLethalMode();
+    if (seg === 'online') return this.showOnline(null);
+    if (seg === 'room') return this.showOnline((r.segments[1] || r.query.key || '').toUpperCase() || null);
+    return this.showMenu();
   }
 
   _setScreen(node) {
@@ -61,12 +75,23 @@ export class App {
   }
 
   showMenu() {
-    this._setScreen(new MenuScreen({ onPlay: () => this.showSetup(), onLethal: () => this.startLethalMode(), onOnline: () => this.showOnline() }).root);
+    this._setScreen(new MenuScreen({ onPlay: () => this.router.go('/play'), onLethal: () => this.router.go('/lethal'), onOnline: () => this.router.go('/online') }).root);
   }
 
-  /** Online lobby: create/join a room, then launch the networked game on match start. */
-  showOnline() {
-    const screen = new OnlineScreen({ onBack: () => this.showMenu(), onLaunch: (net, firstRound, meta) => this.startOnlineGame(net, firstRound, meta) });
+  /**
+   * Online lobby. `initialCode` (from a #/room/CODE deep link) pre-fills the join
+   * code so a shared link drops the player straight onto the join step.
+   * @param {string|null} initialCode
+   */
+  showOnline(initialCode) {
+    // Already live in this exact room (we updated the URL ourselves)? Don't rebuild.
+    if (this.onlineNet && this.onlineNet.code && initialCode === this.onlineNet.code) return;
+    const screen = new OnlineScreen({
+      onBack: () => this.router.go('/'),
+      onLaunch: (net, firstRound, meta) => this.startOnlineGame(net, firstRound, meta),
+      onRoom: (code) => this.router.replace(`/room/${code}`), // shareable URL, no re-render
+      initialCode,
+    });
     this._setScreen(screen.root);
     this.onlineScreen = screen; // set AFTER _setScreen so it isn't disposed immediately
   }
@@ -85,7 +110,7 @@ export class App {
     this.pingEl = el('span.topbar__ping', { text: '' });
     this.botToggleEl = el('button.topbar__bots', { text: '', on: { click: () => net.setFillBots(!this.onlineFillBots) } });
     const topbar = el('div.topbar', {}, [
-      el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.showMenu() } }),
+      el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.router.go('/') } }),
       el('span.topbar__spacer'),
       this.botToggleEl,
       this.pingEl,
@@ -145,7 +170,7 @@ export class App {
     if (!this.matchPanel || !this.online) return;
     clear(this.matchPanel);
     const kids = [el('div.overlay__big', { text })];
-    if (withMenu) kids.push(el('button.btn', { text: '☰ Menu', on: { click: () => this.showMenu() } }));
+    if (withMenu) kids.push(el('button.btn', { text: '☰ Menu', on: { click: () => this.router.go('/') } }));
     this.matchPanel.appendChild(el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, kids));
     this.matchPanel.removeAttribute('hidden');
     this.matchPanel.style.display = 'grid';
@@ -162,7 +187,7 @@ export class App {
     clear(this.matchPanel);
     const actions = [];
     if (this.onlineIsHost) actions.push(el('button.btn', { text: '↻ Play Again', on: { click: () => this.onlineNet?.startMatch() } }));
-    actions.push(el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.showMenu() } }));
+    actions.push(el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }));
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
         el('div.overlay__big', { text: name ? `${name} wins the match!` : 'Match over' }),
@@ -188,7 +213,7 @@ export class App {
   showSetup() {
     this._setScreen(
       new SetupScreen({
-        onBack: () => this.showMenu(),
+        onBack: () => this.router.go('/'),
         onStart: (cfg) => this.startGame(cfg),
       }).root,
     );
@@ -199,7 +224,7 @@ export class App {
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
     const topbar = el('div.topbar', {}, [
-      el('button.btn--ghost', { text: '☰ Menu', on: { click: () => this.showMenu() } }),
+      el('button.btn--ghost', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
       el('span'),
     ]);
     const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar]);
@@ -221,7 +246,7 @@ export class App {
         el('div.overlay__big', { text: winner ? `${winner.name} wins the match!` : 'Match over' }),
         el('div', { style: { display: 'flex', gap: '14px' } }, [
           el('button.btn', { text: '↻ Play Again', on: { click: () => this._playAgain() } }),
-          el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.showMenu() } }),
+          el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
         ]),
       ]),
     );

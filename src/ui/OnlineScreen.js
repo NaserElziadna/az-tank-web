@@ -9,9 +9,11 @@ import { NetClient } from '../net/NetClient.js';
  */
 export class OnlineScreen {
   /** @param {{onBack:()=>void, onLaunch:(net:NetClient)=>void}} handlers */
-  constructor({ onBack, onLaunch }) {
+  constructor({ onBack, onLaunch, onRoom = () => {}, initialCode = null }) {
     this.onBack = onBack;
     this.onLaunch = onLaunch;
+    this.onRoom = onRoom;
+    this.initialCode = initialCode;
     this.net = new NetClient();
     this.code = null;
     this.localSlot = null;
@@ -30,8 +32,14 @@ export class OnlineScreen {
   _renderEntry(error) {
     clear(this.root);
     const nameInput = el('input.online__input', { type: 'text', maxlength: '12', placeholder: 'Your name', value: savedName() });
-    const codeInput = el('input.online__input.online__input--code', { type: 'text', maxlength: '4', placeholder: 'CODE' });
+    const codeInput = el('input.online__input.online__input--code', { type: 'text', maxlength: '4', placeholder: 'CODE', value: this.initialCode || '' });
     codeInput.addEventListener('input', () => (codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
+
+    // Deep link (#/room/CODE) with a remembered name → join straight away.
+    if (this.initialCode && !error && savedName() && !this._autoJoined) {
+      this._autoJoined = true;
+      this._connectThen(() => this.net.joinRoom(this.initialCode, getName(nameInput)));
+    }
 
     this.root.appendChild(
       el('div.online', {}, [
@@ -77,6 +85,7 @@ export class OnlineScreen {
       el('div.online', {}, [
         el('div.menu__logo', {}, [el('span.tank', { text: 'ROOM' }), el('span.trouble', { text: this.code })]),
         el('p.menu__tagline', { text: this.fillBots ? 'Share this code with friends. Empty seats play as bots.' : 'Share this code with friends. Empty seats stay open.' }),
+        el('button.online__copy', { text: '🔗 Copy invite link', on: { click: (e) => this._copyLink(e.currentTarget) } }),
         el('div.online__seats', {}, seats),
         this._botToggle(),
         this._optionRow('Bot skill', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['lethal', 'Lethal']], this.difficulty, (v) => this.net.setSettings({ difficulty: v })),
@@ -133,6 +142,7 @@ export class OnlineScreen {
       this.code = m.code;
       this.localSlot = m.slot;
       this.isHost = m.isHost;
+      this.onRoom(m.code); // let the app update the URL to a shareable #/room/CODE
       this._renderLobby();
     });
     this.net.on('roomState', (m) => {
@@ -154,6 +164,22 @@ export class OnlineScreen {
     this.net.on('netClose', () => {
       if (!this._launched) this._renderEntry('Disconnected from the server.');
     });
+  }
+
+  _copyLink(btn) {
+    const url = window.location.href;
+    const done = () => {
+      if (btn) {
+        const prev = btn.textContent;
+        btn.textContent = '✓ Link copied!';
+        setTimeout(() => (btn.textContent = prev), 1500);
+      }
+    };
+    try {
+      navigator.clipboard.writeText(url).then(done, done);
+    } catch {
+      done();
+    }
   }
 
   _leave() {

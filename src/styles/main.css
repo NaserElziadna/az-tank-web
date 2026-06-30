@@ -275,6 +275,21 @@ body {
   color: var(--text-dim);
   font-size: 14px;
 }
+.online__copy {
+  appearance: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed #4a4f59;
+  border-radius: 999px;
+  padding: 8px 18px;
+}
+.online__copy:hover {
+  background: rgba(224, 179, 65, 0.08);
+}
 .online__option {
   display: flex;
   align-items: center;
