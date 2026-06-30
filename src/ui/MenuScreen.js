@@ -5,8 +5,8 @@ import { el } from './dom.js';
  * and reports the choice back via callbacks; the app owns navigation.
  */
 export class MenuScreen {
-  /** @param {{onPlay: ()=>void, onLethal?: ()=>void}} handlers */
-  constructor({ onPlay, onLethal }) {
+  /** @param {{onPlay: ()=>void, onLethal?: ()=>void, onOnline?: ()=>void}} handlers */
+  constructor({ onPlay, onLethal, onOnline }) {
     this.root = el('div.screen.menu', {}, [
       el('div.menu__logo', {}, [
         el('span.tank', { text: 'AZ TANK' }),
@@ -17,6 +17,7 @@ export class MenuScreen {
       }),
       el('div.menu__actions', {}, [
         el('button.btn', { text: '▶  Play', on: { click: onPlay } }),
+        onOnline ? el('button.btn.btn--online', { text: '🌐  Play Online', on: { click: onOnline } }) : null,
         el('button.btn.btn--lethal', { text: '☠  Lethal Mode', on: { click: onLethal || onPlay } }),
         el('button.btn.btn--ghost', { text: 'How to play', on: { click: () => this._toggleHelp() } }),
       ]),

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .DS_Store
 *.log
+.playwright-mcp/
 
 # Reference clone used only for studying mechanics — never part of the build.
 cdn.tanktrouble.com/

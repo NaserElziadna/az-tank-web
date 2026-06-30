@@ -1,0 +1,12 @@
+# Render deploy: a single Node web service that builds the client and serves
+# both the static bundle and the WebSocket game server on the same port.
+# Render injects PORT; the server reads it. Free instances sleep when idle.
+services:
+  - type: web
+    name: az-tank
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true

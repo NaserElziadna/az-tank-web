@@ -1,7 +1,9 @@
 import { EventBus } from '../core/events/EventBus.js';
 import { MenuScreen } from '../ui/MenuScreen.js';
 import { SetupScreen } from '../ui/SetupScreen.js';
+import { OnlineScreen } from '../ui/OnlineScreen.js';
 import { PhaserGame } from '../phaser/PhaserGame.js';
+import { PhaserOnlineGame } from '../phaser/PhaserOnlineGame.js';
 import { PhaserAudio } from '../phaser/PhaserAudio.js';
 import { ControllerType, Difficulty } from '../models/enums.js';
 import { el, clear } from '../ui/dom.js';
@@ -28,6 +30,10 @@ export class App {
 
   _setScreen(node) {
     this._teardownGame();
+    if (this.onlineScreen) {
+      this.onlineScreen.dispose();
+      this.onlineScreen = null;
+    }
     clear(this.mount);
     this.mount.appendChild(node);
   }
@@ -37,10 +43,53 @@ export class App {
       this.phaser.destroy();
       this.phaser = null;
     }
+    if (this.online) {
+      this.online.destroy();
+      this.online = null;
+    }
+    if (this.onlineNet) {
+      this.onlineNet.close();
+      this.onlineNet = null;
+    }
   }
 
   showMenu() {
-    this._setScreen(new MenuScreen({ onPlay: () => this.showSetup(), onLethal: () => this.startLethalMode() }).root);
+    this._setScreen(new MenuScreen({ onPlay: () => this.showSetup(), onLethal: () => this.startLethalMode(), onOnline: () => this.showOnline() }).root);
+  }
+
+  /** Online lobby: create/join a room, then launch the networked game on match start. */
+  showOnline() {
+    const screen = new OnlineScreen({ onBack: () => this.showMenu(), onLaunch: (net) => this.startOnlineGame(net) });
+    this._setScreen(screen.root);
+    this.onlineScreen = screen; // set AFTER _setScreen so it isn't disposed immediately
+  }
+
+  startOnlineGame(net) {
+    // Claim the net connection before _setScreen so teardown doesn't close it.
+    this.onlineNet = net;
+    this.onlineScreen = null; // handed off; its tank is now server-driven
+
+    this.stage = el('div.game__stage');
+    this.matchPanel = el('div.overlay', { hidden: 'hidden' });
+    const topbar = el('div.topbar', {}, [el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.showMenu() } }), el('span')]);
+    const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar]);
+    this._setScreen(root);
+
+    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION });
+    net.on('matchOver', (m) => this._showOnlineMatchOver(m));
+  }
+
+  _showOnlineMatchOver(m) {
+    const name = m && m.winnerSlot != null ? `Player ${m.winnerSlot + 1}` : null;
+    clear(this.matchPanel);
+    this.matchPanel.appendChild(
+      el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
+        el('div.overlay__big', { text: name ? `${name} wins the match!` : 'Match over' }),
+        el('div', { style: { display: 'flex', gap: '14px' } }, [el('button.btn', { text: '☰ Menu', on: { click: () => this.showMenu() } })]),
+      ]),
+    );
+    this.matchPanel.removeAttribute('hidden');
+    this.matchPanel.style.display = 'grid';
   }
 
   /** Boss mode: a 1-v-1 duel (first to 5) against one lethal tank. */

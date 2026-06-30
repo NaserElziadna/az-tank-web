@@ -55,6 +55,27 @@ It should *feel* like the same game — just with friends instead of local AI.
 - Client-side prediction for the local tank + server reconciliation.
 - Binary message packing if bandwidth ever matters.
 
+## How to run & test locally
+
+Two terminals:
+
+```bash
+npm run server   # authoritative game server on :8080 (ws path /ws)
+npm run dev      # Vite client on :5173 (auto-connects to :8080 in dev)
+```
+
+Open **two** browser tabs on http://localhost:5173 →
+1. Tab A: **🌐 Play Online → Create Room** → note the 4-letter code.
+2. Tab B: **🌐 Play Online**, type the code → **Join**.
+3. Tab A (host): **Start Match**. Both tabs drop into the same arena;
+   the two empty seats are bots. Arrows = move, **M** = fire, **Space** = ability.
+
+Headless checks (no browser): `node server/sim-smoke.js` (sim runs in Node),
+and with the server up, `node server/_netcheck.js` (protocol flow).
+
+Production (Render): `render.yaml` builds the client and runs one Node service
+that serves the bundle **and** the WebSocket on the same port.
+
 ## Acceptance checklist (for the human's final test)
 
 - [ ] Create room → get code; second browser joins with code.

@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "serve": "vite preview --port 4173"
+    "serve": "vite preview --port 4173",
+    "server": "node server/index.js",
+    "start": "node server/index.js"
   },
   "keywords": [
     "game",
@@ -25,8 +27,10 @@
   },
   "dependencies": {
     "box2dweb": "^2.1.0-b",
+    "express": "^5.2.1",
     "howler": "^2.2.4",
     "jkstra": "^0.1.1",
-    "phaser-ce": "^2.20.2"
+    "phaser-ce": "^2.20.2",
+    "ws": "^8.21.0"
   }
 }
