@@ -43,10 +43,20 @@ export function genRoomCode(rand = Math.random) {
   return s;
 }
 
-/** Opaque per-member session token used to reclaim a slot on reconnect. */
-export function genToken(rand = Math.random) {
+/**
+ * Opaque per-member session token used to reclaim a slot on reconnect. This is
+ * a credential, so it's generated from a CSPRNG (Web Crypto, present in Node 19+
+ * and all browsers) — never Math.random. Returns 32 hex chars (128 bits).
+ */
+export function genToken() {
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto && globalThis.crypto.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256); // last-resort fallback
+  }
   let s = '';
-  for (let i = 0; i < 16; i++) s += Math.floor(rand() * 36).toString(36);
+  for (const b of bytes) s += b.toString(16).padStart(2, '0');
   return s;
 }
 
