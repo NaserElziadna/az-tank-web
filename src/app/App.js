@@ -216,11 +216,15 @@ export class App {
 
   /** First mic tap enables voice (mic permission); later taps toggle mute. */
   async _toggleMic() {
+    alog.info('mic click', { hasVoice: !!this.voice, enabled: this.voice?.enabled });
     const v = this.voice;
     if (!v) return;
     if (!v.enabled) {
       const ok = await v.enable();
-      if (!ok) this._showOnlineNotice('Microphone permission denied.', false), setTimeout(() => this._hideOnlineNotice(), 1800);
+      if (!ok) {
+        this._showOnlineNotice('Microphone blocked. Use https/localhost and allow the mic.', false);
+        setTimeout(() => this._hideOnlineNotice(), 2200);
+      }
     } else {
       v.setMuted(!v.muted);
     }
@@ -228,6 +232,7 @@ export class App {
   }
 
   _toggleDeafen() {
+    alog.info('deafen click', { hasVoice: !!this.voice, enabled: this.voice?.enabled });
     if (!this.voice) return;
     this.voice.setDeafened(!this.voice.deafened);
     this._refreshVoiceUI();

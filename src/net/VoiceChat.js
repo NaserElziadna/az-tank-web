@@ -31,7 +31,9 @@ export class VoiceChat {
   /** Grab the mic and join the voice mesh. Returns false if permission denied. */
   async enable() {
     if (this.enabled) return true;
+    vlog.info('enable() called', { hasMediaDevices: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), secure: window.isSecureContext });
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia unavailable (insecure context?)');
       this.localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
     } catch (e) {
       vlog.warn('mic permission denied', { error: e?.message });
