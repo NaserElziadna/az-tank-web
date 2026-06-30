@@ -23,7 +23,7 @@ export class PhaserOnlineGame {
    * @param {HTMLElement} parentEl
    * @param {{net:import('../net/NetClient.js').NetClient, version?:string}} opts
    */
-  constructor(parentEl, { net, version = 'v2.0' }) {
+  constructor(parentEl, { net, version = 'v2.0', initialRound = null }) {
     this.net = net;
     this.version = version;
     this.parentEl = parentEl;
@@ -34,6 +34,10 @@ export class PhaserOnlineGame {
     this.renderer = null;
     this._inputAcc = 0;
     this._lastInput = null;
+
+    // The roundStart that triggered the launch was already dispatched before we
+    // subscribed, so apply it directly to avoid waiting for the next round.
+    if (initialRound) this.remote.onRoundStart(initialRound);
 
     this._unsub = [
       net.on('roundStart', (m) => this.remote.onRoundStart(m)),

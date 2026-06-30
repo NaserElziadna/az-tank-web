@@ -112,10 +112,10 @@ export class OnlineScreen {
       if (me) this.isHost = me.isHost;
       if (this.code) this._renderLobby();
     });
-    this.net.on('roundStart', () => {
+    this.net.on('roundStart', (m) => {
       if (this._launched) return;
       this._launched = true;
-      this.onLaunch(this.net);
+      this.onLaunch(this.net, m); // hand the first round to the game so it inits deterministically
     });
     this.net.on('netClose', () => {
       if (!this._launched) this._renderEntry('Disconnected from the server.');

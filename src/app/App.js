@@ -59,23 +59,24 @@ export class App {
 
   /** Online lobby: create/join a room, then launch the networked game on match start. */
   showOnline() {
-    const screen = new OnlineScreen({ onBack: () => this.showMenu(), onLaunch: (net) => this.startOnlineGame(net) });
+    const screen = new OnlineScreen({ onBack: () => this.showMenu(), onLaunch: (net, firstRound) => this.startOnlineGame(net, firstRound) });
     this._setScreen(screen.root);
     this.onlineScreen = screen; // set AFTER _setScreen so it isn't disposed immediately
   }
 
-  startOnlineGame(net) {
-    // Claim the net connection before _setScreen so teardown doesn't close it.
-    this.onlineNet = net;
-    this.onlineScreen = null; // handed off; its tank is now server-driven
-
+  /** @param {import('../net/NetClient.js').NetClient} net @param {object} firstRound the roundStart that triggered launch */
+  startOnlineGame(net, firstRound) {
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
     const topbar = el('div.topbar', {}, [el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.showMenu() } }), el('span')]);
     const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar]);
+    // Tear down the lobby screen FIRST (while onlineNet is still unset, so its
+    // teardown can't close the connection we're about to use), THEN claim net.
     this._setScreen(root);
+    this.onlineScreen = null; // handed off; its tank is now server-driven
+    this.onlineNet = net;
 
-    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION });
+    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound });
     net.on('matchOver', (m) => this._showOnlineMatchOver(m));
   }
 
