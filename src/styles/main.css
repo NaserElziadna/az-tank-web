@@ -451,6 +451,10 @@ body {
   align-items: stretch;
   justify-content: stretch;
 }
+.game__stage-wrap {
+  position: absolute;
+  inset: 0;
+}
 .game__stage {
   flex: 1;
   width: 100%;
@@ -458,6 +462,15 @@ body {
   display: grid;
   place-items: center;
   min-height: 0;
+}
+/* On touch devices the on-screen joystick/fire live in a reserved bottom band,
+   so the canvas (arena + its bottom HUD) sits entirely above them — nothing of
+   the play area or the scoreboard is covered. */
+.game--touch .game__stage-wrap {
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+}
+.game--touch .touch {
+  position: fixed;
 }
 #game-canvas {
   background: var(--arena-bg);
@@ -616,6 +629,30 @@ body {
 .touch__ability.is-active {
   transform: scale(0.9);
   filter: brightness(1.2);
+}
+
+/* Slightly smaller controls on touch so they sit inside the reserved band. */
+@media (pointer: coarse) {
+  .touch__stick {
+    width: 116px;
+    height: 116px;
+  }
+  .touch__knob {
+    width: 52px;
+    height: 52px;
+  }
+  .touch__fire {
+    width: 92px;
+    height: 92px;
+    font-size: 16px;
+  }
+  .touch__ability {
+    width: 66px;
+    height: 66px;
+    font-size: 12px;
+    right: calc(max(20px, env(safe-area-inset-right, 0px)) + 100px);
+    bottom: calc(max(24px, env(safe-area-inset-bottom, 0px)) + 26px);
+  }
 }
 
 /* ── Rotate-to-landscape hint (small portrait phones, in-game only) ────────── */
