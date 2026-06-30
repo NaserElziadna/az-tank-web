@@ -113,6 +113,9 @@ export class Logger {
     this._src = src;
     this._sink = sink;
     this._min = LEVELS[minLevel] ?? 10;
+    // Shared state for the smart helpers (throttle/sample/change), kept on the
+    // root so all scoped children rate-limit against one set of keys.
+    this._state = { throttle: new Map(), count: new Map(), last: new Map() };
   }
 
   /** Child logger with a different scope, sharing this logger's sink/level. */
@@ -159,6 +162,39 @@ export class Logger {
   }
   error(msg, data) {
     this._log('error', msg, data);
+  }
+
+  // ── smart helpers: log a lot, but never flood ──────────────────────────────
+  _st() {
+    return this._shared ? this._shared._state : this._state;
+  }
+
+  /** Log at most once per `ms` for `key` (good for high-rate telemetry). */
+  throttled(key, ms, level, msg, data) {
+    const st = this._st().throttle;
+    const k = `${this._scope}:${key}`;
+    const now = Date.now();
+    if (now - (st.get(k) || 0) < ms) return;
+    st.set(k, now);
+    this._log(level, msg, data);
+  }
+
+  /** Log the 1st call and then every `n`-th for `key` (good for hot events). */
+  sampled(key, n, level, msg, data) {
+    const st = this._st().count;
+    const k = `${this._scope}:${key}`;
+    const c = (st.get(k) || 0) + 1;
+    st.set(k, c);
+    if (c === 1 || c % n === 0) this._log(level, msg, { ...data, _n: c });
+  }
+
+  /** Log only when `value` differs from the last value seen for `key`. */
+  changed(key, value, level, msg, data) {
+    const st = this._st().last;
+    const k = `${this._scope}:${key}`;
+    if (st.get(k) === value) return;
+    st.set(k, value);
+    this._log(level, msg, data);
   }
 
   /** Ingest a pre-built entry (used by the server to write client batches). */

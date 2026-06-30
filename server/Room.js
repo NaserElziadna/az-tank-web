@@ -41,6 +41,23 @@ export class Room {
     this._matchOverSent = false;
 
     this.bus.on('round:created', () => this._broadcastRoundStart());
+    this._wireEventLogs();
+  }
+
+  /**
+   * Mirror the authoritative sim's gameplay events into the log. Rare events
+   * (kills, pickups, abilities, round results) log in full; hot ones (fire,
+   * damage) are sampled so the picture is rich without flooding the file.
+   */
+  _wireEventLogs() {
+    const code = this.code;
+    this.bus.on('tank:destroyed', (e) => rlog.info('kill', { code, slot: e.slot, by: e.killerSlot ?? null }));
+    this.bus.on('round:decided', (e) => rlog.info('round decided', { code, winnerSlot: e.winnerSlot }));
+    this.bus.on('collectible:picked', (e) => rlog.info('pickup', { code, slot: e.slot, type: e.type }));
+    this.bus.on('ability:activate', (e) => rlog.info('ability', { code, slot: e.slot, kind: e.kind }));
+    this.bus.on('mine:detonated', () => rlog.debug('mine detonated', { code }));
+    this.bus.on('weapon:fire', (e) => rlog.sampled(`fire-${code}`, 15, 'debug', 'weapon fire', { code, weapon: e.weapon }));
+    this.bus.on('tank:damaged', (e) => rlog.sampled(`dmg-${code}`, 6, 'debug', 'tank damaged', { code, slot: e.slot ?? e.targetSlot }));
   }
 
   // ── lobby ──────────────────────────────────────────────────────────────

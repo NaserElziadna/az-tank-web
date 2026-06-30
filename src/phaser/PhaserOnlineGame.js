@@ -10,6 +10,7 @@ import { RemoteMatch } from '../net/RemoteMatch.js';
 import { log } from '../core/log/Logger.js';
 
 const glog = log.scope('game');
+const ilog = log.scope('input');
 const INPUT_HZ = 30;
 const INPUT_INTERVAL = 1 / INPUT_HZ;
 
@@ -36,6 +37,8 @@ export class PhaserOnlineGame {
     this.renderer = null;
     this._inputAcc = 0;
     this._lastInput = null;
+    this._fpsFrames = 0;
+    this._fpsTime = 0;
 
     glog.info('online game created', { hasInitialRound: !!initialRound });
     // The roundStart that triggered the launch was already dispatched before we
@@ -86,15 +89,38 @@ export class PhaserOnlineGame {
     if (dt > 0.25) dt = 0.25;
 
     const intent = this._readLocalInput();
+    const changed = this._changed(intent);
+    // Smart input logging: one line only when the held state actually changes,
+    // never the 30Hz stream — so taps/turns are visible without flooding.
+    if (changed) ilog.debug('input', intent);
     this._inputAcc += dt;
     // Send on a fixed cadence, plus immediately when the held state changes so
     // taps (fire/ability) are never swallowed by the throttle.
-    if (this._inputAcc >= INPUT_INTERVAL || this._changed(intent)) {
+    if (this._inputAcc >= INPUT_INTERVAL || changed) {
       this._inputAcc = 0;
       this._lastInput = intent;
       this.net.sendInput(intent);
     }
     if (this.renderer) this.renderer.update(dt);
+
+    // Periodic telemetry: one rich line every 5s (FPS, rtt, interp buffer, who's
+    // alive, current phase/round) — enough to see health at a glance, throttled.
+    this._fpsFrames++;
+    this._fpsTime += dt;
+    if (this._fpsTime >= 5) {
+      const round = this.remote.round;
+      glog.info('telemetry', {
+        fps: Math.round(this._fpsFrames / this._fpsTime),
+        rtt: this.net.rtt != null ? Math.round(this.net.rtt) : null,
+        buf: this.remote._buf.length,
+        phase: this.remote.phase,
+        round: this.remote.roundNumber,
+        alive: round ? round.tanks.filter((t) => t.alive).length : 0,
+        proj: round ? round.projectiles.length : 0,
+      });
+      this._fpsFrames = 0;
+      this._fpsTime = 0;
+    }
 
     // Starvation watchdog: warn only on *sustained* snapshot loss. A new round
     // momentarily empties the buffer (onRoundStart) — that's not starvation, so
