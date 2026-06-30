@@ -493,12 +493,10 @@ body {
   overflow: hidden;
   min-height: 0;
 }
-/* On touch devices the on-screen joystick/fire live in a reserved bottom band,
-   so the canvas (arena + its bottom HUD) sits entirely above them — nothing of
-   the play area or the scoreboard is covered. */
-.game--touch .game__stage-wrap {
-  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
-}
+/* On touch devices the canvas fills the whole screen and the follow-camera keeps
+   the player's tank centered; the joystick/fire/power float over the bottom
+   corners (translucent) instead of stealing a band — so the arena is as large as
+   possible, like a native mobile game. */
 .game--touch .touch {
   position: fixed;
 }
