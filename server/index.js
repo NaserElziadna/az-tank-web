@@ -101,7 +101,8 @@ function handle(ws, conn, msg) {
     case MSG.JOIN_ROOM: {
       const room = rooms.getRoom(msg.code);
       if (!room) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Room not found' });
-      if (room.started) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Match already started' });
+      // Joining mid-match is allowed (you fill an open seat and spawn next round);
+      // only a room with every human seat taken turns players away.
       if (room.isFull) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Room is full' });
       joinRoom(ws, conn, room, msg.name);
       break;
@@ -121,16 +122,20 @@ function handle(ws, conn, msg) {
       slog.info('startMatch', { id: conn.id, room: room?.code || null, ok });
       break;
     }
-    case MSG.SET_FILL_BOTS: {
-      conn.room?.setFillBots(!!msg.on, conn.id);
+    case MSG.SET_BOTS: {
+      conn.room?.setBots(msg.bots, conn.id);
       break;
     }
     case MSG.SET_SETTINGS: {
-      conn.room?.setSettings({ difficulty: msg.difficulty, pointsToWin: msg.pointsToWin }, conn.id);
+      conn.room?.setSettings({ pointsToWin: msg.pointsToWin, reviveBots: msg.reviveBots }, conn.id);
       break;
     }
     case MSG.INPUT: {
       conn.room?.setInput(conn.id, msg);
+      break;
+    }
+    case MSG.RTC: {
+      conn.room?.relayRtc(conn.id, msg);
       break;
     }
     case MSG.LEAVE_ROOM: {

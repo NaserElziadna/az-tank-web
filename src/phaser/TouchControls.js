@@ -6,10 +6,17 @@ import { el } from '../ui/dom.js';
  * same {@link import('../core/input/ControlScheme.js').ControlIntent} shape the
  * tanks consume, so it merges cleanly with the keyboard controller.
  *
- * The stick maps push-up → forward, pull-down → reverse (above a dead-zone) and
- * tilt left/right → analog turn, matching the arrow-key feel. Pointer events are
- * used (covering touch + mouse) so it also works for desktop testing.
+ * Steering is "point where you want to go": the stick direction is the tank's
+ * desired heading. {@link read} is given the tank's current rotation and turns
+ * it toward the stick while driving forward — far more intuitive on a top-down
+ * tank than tilt-to-rotate. If no rotation is supplied it falls back to the old
+ * tank-drive mapping (up → forward, tilt → turn). Pointer events cover touch +
+ * mouse, so it also works for desktop testing.
  */
+const STICK_DEAD = 0.22; // ignore tiny stick offsets (normalized 0..1)
+const TURN_EASE = 0.38; // rad of heading error for full-speed turn; eases below it
+const DRIVE_ARC = 2.0; // drive forward while the target is within ~115° of facing
+
 export class TouchControls {
   /** @param {HTMLElement} parent element to overlay (the game stage) */
   constructor(parent) {
@@ -19,6 +26,9 @@ export class TouchControls {
     this._abilityPressed = false; // edge, consumed on read()
     this._stickId = null;
     this._radius = 56; // px throw of the stick
+    this._vx = 0; // normalized stick offset (−1..1), +x right
+    this._vy = 0; // normalized stick offset (−1..1), +y down
+    this._mag = 0; // normalized stick magnitude (0..1)
     this._build(parent);
   }
 
@@ -91,29 +101,55 @@ export class TouchControls {
       dy = (dy / len) * max;
     }
     this.knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    this.turn = clamp(dx / max, -1, 1);
-    const fwd = -dy / max; // up is forward
-    this.drive = fwd > 0.4 ? 1 : fwd < -0.4 ? -1 : 0;
+    this._vx = clamp(dx / max, -1, 1);
+    this._vy = clamp(dy / max, -1, 1);
+    this._mag = Math.min(1, Math.hypot(this._vx, this._vy));
   }
 
   _stickEnd(e) {
     if (this._stickId !== e.pointerId && e.pointerId !== undefined) return;
     this._stickId = null;
+    this._vx = 0;
+    this._vy = 0;
+    this._mag = 0;
     this.drive = 0;
     this.turn = 0;
     this.knob.style.transform = 'translate(0px, 0px)';
   }
 
-  /** @returns {import('../core/input/ControlScheme.js').ControlIntent} */
-  read() {
+  /**
+   * @param {number} [currentRot] tank's current world heading (radians). When
+   *   given, the stick steers toward the pushed direction; otherwise falls back
+   *   to tank-drive (up → forward, tilt → turn).
+   * @returns {import('../core/input/ControlScheme.js').ControlIntent}
+   */
+  read(currentRot) {
     const abilityPressed = this._abilityPressed;
     this._abilityPressed = false; // consume the edge
-    return { drive: this.drive, turn: this.turn, fire: this.fire, firePressed: false, abilityPressed };
+    let drive = 0;
+    let turn = 0;
+    if (this._mag >= STICK_DEAD) {
+      if (Number.isFinite(currentRot)) {
+        // Heading-based: rotate toward where the stick points, drive once roughly facing it.
+        const desired = Math.atan2(this._vy, this._vx);
+        const err = shortAngle(desired - currentRot);
+        turn = clamp(err / TURN_EASE, -1, 1);
+        drive = Math.abs(err) < DRIVE_ARC ? 1 : 0;
+      } else {
+        // Fallback tank-drive: tilt turns, push up/down throttles.
+        turn = this._vx;
+        const fwd = -this._vy;
+        drive = fwd > 0.4 ? 1 : fwd < -0.4 ? -1 : 0;
+      }
+    }
+    this.drive = drive;
+    this.turn = turn;
+    return { drive, turn, fire: this.fire, firePressed: false, abilityPressed };
   }
 
   /** True if the stick or fire button is currently engaged. */
   get active() {
-    return this.drive !== 0 || this.turn !== 0 || this.fire || this._abilityPressed;
+    return this._mag >= STICK_DEAD || this.fire || this._abilityPressed;
   }
 
   dispose() {
@@ -124,6 +160,13 @@ export class TouchControls {
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
+}
+
+/** Wrap an angle to (−π, π] so heading errors take the shortest way around. */
+function shortAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
 }
 
 /**

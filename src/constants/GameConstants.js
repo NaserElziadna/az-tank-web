@@ -124,6 +124,7 @@ export const C = Object.freeze({
     // Result is shown during ENDING; this also serves as the between-rounds gap.
     ROUND_FINISHING_DURATION: 2.2,
     GO_DURATION: 0.5,
+    REVIVE_DELAY: 1.5, // online: delay before a killed bot respawns (revive mode)
   }),
 
   // ── Lethal boss tank (mechanical edge over a normal tank) ───────────────────

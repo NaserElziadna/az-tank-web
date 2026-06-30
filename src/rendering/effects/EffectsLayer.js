@@ -37,6 +37,18 @@ export class EffectsLayer {
     this._unsub.push(bus.on('tank:damaged', (e) => this._puff(e.x, e.y, 7, '255,228,120', 3.2)));
     // Muzzle flash when any weapon fires.
     this._unsub.push(bus.on('weapon:flash', (e) => this._flash(e.x, e.y)));
+    // Bot respawn (online revive): a materialize flash + collapsing ring.
+    this._unsub.push(bus.on('tank:revived', (e) => this._revive(e.x, e.y, e.colorKey)));
+  }
+
+  /** Spawn-in burst for a revived tank: white flash, coloured sparkle, inward ring. */
+  _revive(x, y, colorKey) {
+    this.particles.burst(x, y, 14, { color: '255,255,255', speed: 6, life: 0.3, r0: 0.05, r1: 0.34, alpha0: 0.9, drag: 0.82 });
+    if (colorKey) {
+      this.particles.burst(x, y, 18, { color: hexToRgb(colorKey.base), speed: 7, life: 0.5, r0: 0.04, r1: 0.26, alpha0: 0.95, drag: 0.8 });
+    }
+    // A ring that collapses inward (r0 > r1) to read as "forming", not "exploding".
+    this._ring(x, y, 4.2, 0.4, colorKey);
   }
 
   /** Bright punchy muzzle flash + a wisp of smoke. */

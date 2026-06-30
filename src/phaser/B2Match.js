@@ -32,18 +32,20 @@ export class B2Match {
     this.matchOver = false;
     this.roundNumber = 0;
     this._humanControllers = new Map();
+    this.reviveBots = false; // online: respawn killed bots while a human is alive
   }
 
   get sim() {
     return this.round;
   }
 
-  configure(players, { pointsToWin = 0, enabledCrates = null, humanControllers = new Map() } = {}) {
+  configure(players, { pointsToWin = 0, enabledCrates = null, humanControllers = new Map(), reviveBots = false } = {}) {
     this.players = players;
     this.pointsToWin = pointsToWin;
     this.score = new Score(pointsToWin);
     this.enabledCrates = enabledCrates;
     this._humanControllers = humanControllers;
+    this.reviveBots = reviveBots;
     for (const p of players) {
       p.score = 0;
       this.score.register(p.slot);
@@ -63,6 +65,7 @@ export class B2Match {
     this.roundNumber++;
     const maze = this.mazeGen.generate(this.players.length);
     this.round = new B2Round(maze, this.bus);
+    this.round.reviveBots = this.reviveBots;
     this.spawner = new CrateSpawner(this.enabledCrates);
     const spawns = maze.tankSpawns;
     this.players.forEach((player, i) => {

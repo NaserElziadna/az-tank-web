@@ -19,9 +19,13 @@ export class OnlineScreen {
     this.localSlot = null;
     this.isHost = false;
     this.members = [];
-    this.fillBots = true;
-    this.difficulty = 'hard';
+    this.bots = []; // [{difficulty}] — host-configured AI roster
+    this.reviveBots = true;
     this.pointsToWin = 5;
+    this.maxHumans = 4;
+    this.maxBots = 4;
+    this.minToStart = 2;
+    this.started = false;
     this._launched = false;
 
     this.root = el('div.screen.menu', {}, []);
@@ -44,7 +48,7 @@ export class OnlineScreen {
     this.root.appendChild(
       el('div.online', {}, [
         el('div.menu__logo', {}, [el('span.tank', { text: 'AZ TANK' }), el('span.trouble', { text: 'ONLINE' })]),
-        el('p.menu__tagline', { text: 'Play with friends. Create a room and share the code — empty seats fill with bots.' }),
+        el('p.menu__tagline', { text: 'Play with friends — 2 or more players per room. Add AI bots to round out the arena.' }),
         error ? el('p.online__error', { text: error }) : null,
         el('div.online__row', {}, [nameInput]),
         el('div.online__actions', {}, [
@@ -70,10 +74,11 @@ export class OnlineScreen {
 
   _renderLobby() {
     clear(this.root);
+    // Human seats — one card per real-player slot (filled or open).
     const seats = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.maxHumans; i++) {
       const m = this.members.find((x) => x.slot === i);
-      const seatLabel = m ? `${m.name}${m.isHost ? '  ★' : ''}` : this.fillBots ? 'Bot (AI)' : 'Open';
+      const seatLabel = m ? `${m.name}${m.isHost ? '  ★' : ''}` : 'Open';
       seats.push(
         el('div.online__seat' + (m ? '.online__seat--filled' : ''), {}, [
           el('span.online__seat-no', { text: `P${i + 1}` }),
@@ -84,27 +89,80 @@ export class OnlineScreen {
     this.root.appendChild(
       el('div.online', {}, [
         el('div.menu__logo', {}, [el('span.tank', { text: 'ROOM' }), el('span.trouble', { text: this.code })]),
-        el('p.menu__tagline', { text: this.fillBots ? 'Share this code with friends. Empty seats play as bots.' : 'Share this code with friends. Empty seats stay open.' }),
+        el('p.menu__tagline', { text: 'Share this code with friends. You need at least 2 players to start.' }),
         el('button.online__copy', { text: '🔗 Copy invite link', on: { click: (e) => this._copyLink(e.currentTarget) } }),
+        el('div.online__section-label', { text: 'Players' }),
         el('div.online__seats', {}, seats),
-        this._botToggle(),
-        this._optionRow('Bot skill', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['lethal', 'Lethal']], this.difficulty, (v) => this.net.setSettings({ difficulty: v })),
+        this._botConfig(),
+        this._reviveRow(),
         this._optionRow('First to', [[3, '3'], [5, '5'], [10, '10']], this.pointsToWin, (v) => this.net.setSettings({ pointsToWin: v }), this.started),
-        el('div.menu__actions', {}, [
-          this.isHost
-            ? el('button.btn', { text: '▶  Start Match', on: { click: () => this.net.startMatch() } })
-            : el('p.online__waiting', { text: 'Waiting for the host to start…' }),
-          el('button.btn.btn--ghost', { text: '← Leave', on: { click: () => this._leave() } }),
-        ]),
+        this._startRow(),
       ]),
     );
   }
 
-  /** Host-only toggle for filling empty seats with AI bots. */
-  _botToggle() {
-    const label = `Fill empty seats with bots:  ${this.fillBots ? 'ON' : 'OFF'}`;
-    if (!this.isHost) return el('p.online__hint', { text: this.fillBots ? 'Empty seats are bots.' : 'Empty seats stay open.' });
-    return el('button', { class: `online__toggle ${this.fillBots ? 'online__toggle--on' : 'online__toggle--off'}`, text: label, on: { click: () => this.net.setFillBots(!this.fillBots) } });
+  /** Bot roster: a count stepper plus a per-bot skill picker (host-editable). */
+  _botConfig() {
+    const count = this.bots.length;
+    const rows = [];
+    // Count stepper.
+    const stepper = this.isHost
+      ? el('div.online__stepper', {}, [
+          el('button.online__step', { text: '−', disabled: count <= 0 ? 'disabled' : null, on: { click: () => this._setBotCount(count - 1) } }),
+          el('span.online__step-val', { text: String(count) }),
+          el('button.online__step', { text: '+', disabled: count >= this.maxBots ? 'disabled' : null, on: { click: () => this._setBotCount(count + 1) } }),
+        ])
+      : el('span.online__step-val', { text: String(count) });
+    rows.push(el('div.online__option', {}, [el('span.online__option-label', { text: `AI bots (max ${this.maxBots})` }), stepper]));
+    // One skill row per bot.
+    const skills = [['easy', 'Easy'], ['medium', 'Med'], ['hard', 'Hard'], ['lethal', 'Lethal']];
+    this.bots.forEach((b, i) => {
+      rows.push(this._optionRow(`Bot ${i + 1}`, skills, b.difficulty, (v) => this._setBotSkill(i, v)));
+    });
+    return el('div.online__bots', {}, [el('div.online__section-label', { text: 'Bots' }), ...rows]);
+  }
+
+  /** Host: grow/shrink the bot roster, defaulting new bots to Hard. */
+  _setBotCount(n) {
+    if (!this.isHost) return;
+    n = Math.max(0, Math.min(this.maxBots, n));
+    const next = this.bots.slice(0, n);
+    while (next.length < n) next.push({ difficulty: 'hard' });
+    this.net.setBots(next);
+  }
+
+  /** Host: change one bot's skill. */
+  _setBotSkill(i, difficulty) {
+    if (!this.isHost) return;
+    const next = this.bots.map((b, j) => (j === i ? { difficulty } : { difficulty: b.difficulty }));
+    this.net.setBots(next);
+  }
+
+  /** Host toggle: revive killed bots while a human is alive. */
+  _reviveRow() {
+    const label = `Revive bots while a player lives:  ${this.reviveBots ? 'ON' : 'OFF'}`;
+    if (!this.isHost) return el('p.online__hint', { text: this.reviveBots ? 'Bots respawn until a player is left standing.' : 'Bots stay down once destroyed.' });
+    return el('button', { class: `online__toggle ${this.reviveBots ? 'online__toggle--on' : 'online__toggle--off'}`, text: label, on: { click: () => this.net.setSettings({ reviveBots: !this.reviveBots }) } });
+  }
+
+  /** Start button + gating: 2+ players required; late joiners see a wait notice. */
+  _startRow() {
+    const humans = this.members.length;
+    const enough = humans >= this.minToStart;
+    let primary;
+    if (this.started) {
+      primary = el('p.online__waiting', { text: "Match in progress — you'll join the next round." });
+    } else if (!this.isHost) {
+      primary = el('p.online__waiting', { text: enough ? 'Waiting for the host to start…' : `Waiting for players… (${humans}/${this.minToStart})` });
+    } else if (enough) {
+      primary = el('button.btn', { text: '▶  Start Match', on: { click: () => this.net.startMatch() } });
+    } else {
+      primary = el('div', { style: { display: 'grid', gap: '6px', justifyItems: 'center' } }, [
+        el('button.btn', { text: '▶  Start Match', disabled: 'disabled' }),
+        el('p.online__hint', { text: `Need at least ${this.minToStart} players — share the code above.` }),
+      ]);
+    }
+    return el('div.menu__actions', {}, [primary, el('button.btn.btn--ghost', { text: '← Leave', on: { click: () => this._leave() } })]);
   }
 
   /**
@@ -147,9 +205,12 @@ export class OnlineScreen {
     });
     this.net.on('roomState', (m) => {
       this.members = m.members || [];
-      if (typeof m.fillBots === 'boolean') this.fillBots = m.fillBots;
-      if (m.difficulty) this.difficulty = m.difficulty;
+      if (Array.isArray(m.bots)) this.bots = m.bots;
+      if (typeof m.reviveBots === 'boolean') this.reviveBots = m.reviveBots;
       if (m.pointsToWin) this.pointsToWin = m.pointsToWin;
+      if (typeof m.maxHumans === 'number') this.maxHumans = m.maxHumans;
+      if (typeof m.maxBots === 'number') this.maxBots = m.maxBots;
+      if (typeof m.minToStart === 'number') this.minToStart = m.minToStart;
       if (typeof m.started === 'boolean') this.started = m.started;
       const me = this.members.find((x) => x.slot === this.localSlot);
       if (me) this.isHost = me.isHost;
@@ -158,8 +219,8 @@ export class OnlineScreen {
     this.net.on('roundStart', (m) => {
       if (this._launched) return;
       this._launched = true;
-      // Hand the first round + host/fill state to the game so it inits deterministically.
-      this.onLaunch(this.net, m, { isHost: this.isHost, fillBots: this.fillBots, localSlot: this.localSlot });
+      // Hand the first round + host/revive state to the game so it inits deterministically.
+      this.onLaunch(this.net, m, { isHost: this.isHost, reviveBots: this.reviveBots, localSlot: this.localSlot });
     });
     this.net.on('netClose', () => {
       if (!this._launched) this._renderEntry('Disconnected from the server.');

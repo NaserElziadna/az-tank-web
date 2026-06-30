@@ -11,7 +11,9 @@ import { log } from '../src/core/log/Logger.js';
 
 const rlog = log.scope('room');
 
-const MAX_SLOTS = 4; // classic 2–4 arena; humans fill low slots, bots fill the rest
+const MAX_HUMANS = 4; // dedicated human seats (slots 0–3)
+const MAX_BOTS = 4; // optional AI tanks stacked above the humans (slots 4–7)
+const MIN_HUMANS_TO_START = 2; // online is player-vs-player; a lone player waits
 const SNAP_HZ = 20; // authoritative snapshot rate
 const SNAP_INTERVAL = 1 / SNAP_HZ;
 const POINTS_TO_WIN = 5;
@@ -34,15 +36,22 @@ const FORWARDED_EVENTS = [
   'collectible:picked',
   'round:countdown:tick',
   'round:start',
+  'tank:revived',
 ];
 
 /**
  * One online match room. Holds the connected members, the single authoritative
  * {@link B2Match}, and the fixed-timestep server loop that steps the sim and
- * broadcasts snapshots (with a piggy-backed gameplay-event batch). The host can
- * toggle whether empty seats are filled with AI bots, in the lobby AND mid-match
- * (it takes effect at the next round). A human who leaves mid-match is handed to
- * the AI so their tank keeps fighting instead of freezing.
+ * broadcasts snapshots (with a piggy-backed gameplay-event batch).
+ *
+ * Seats are two separate pools: up to {@link MAX_HUMANS} real players (slots
+ * 0–3) plus a host-configured set of AI bots (slots 4–7), each with its own
+ * skill. A match needs {@link MIN_HUMANS_TO_START} humans to begin — a lone
+ * player waits in the lobby — and players can join any time there's an open
+ * human seat (spawning at the next round). With revive-bots on, killed bots
+ * respawn while a human is alive, so a round ends on human elimination, never on
+ * a bots-only duel. A human who leaves mid-match is handed to the AI so their
+ * tank keeps fighting instead of freezing.
  */
 export class Room {
   /** @param {string} code @param {() => void} onEmpty called when the last member leaves */
@@ -53,8 +62,10 @@ export class Room {
     this.members = new Map();
     this.hostId = null;
     this.started = false;
-    this.fillBots = true; // host-controlled; default keeps the arena full
-    this.difficulty = Difficulty.HARD; // bot skill (host-controlled)
+    // Bot roster: one entry per AI tank, each with its own skill. Host-controlled
+    // (lobby + mid-match). Defaults to a small, lively arena out of the box.
+    this.bots = [{ difficulty: Difficulty.HARD }, { difficulty: Difficulty.HARD }];
+    this.reviveBots = true; // killed bots respawn while a human is alive
     this.pointsToWin = POINTS_TO_WIN; // host-controlled (lobby only)
     this.bus = new EventBus();
     this.match = null;
@@ -107,25 +118,32 @@ export class Room {
   }
 
   // ── lobby ──────────────────────────────────────────────────────────────
+  /** Full = every human seat taken (bots don't occupy human seats). */
   get isFull() {
-    return this.members.size >= MAX_SLOTS;
+    return this.members.size >= MAX_HUMANS;
   }
 
-  /** Lowest free slot index, or -1 if full. */
+  /** Lowest free human seat (0…MAX_HUMANS-1), or -1 if all taken. */
   _freeSlot() {
     const taken = new Set([...this.members.values()].map((m) => m.slot));
-    for (let i = 0; i < MAX_SLOTS; i++) if (!taken.has(i)) return i;
+    for (let i = 0; i < MAX_HUMANS; i++) if (!taken.has(i)) return i;
     return -1;
   }
 
-  /** @returns {{slot:number, token:string}|null} assignment, or null if no room */
+  /**
+   * Seat a player. Allowed any time there's an open human seat — including
+   * mid-match, in which case they're folded into the live roster and spawn at
+   * the next round.
+   * @returns {{slot:number, token:string}|null} assignment, or null if full
+   */
   addMember(id, ws, name) {
-    if (this.started || this.isFull) return null;
+    if (this.isFull) return null;
     const slot = this._freeSlot();
     if (slot < 0) return null;
     const token = genToken();
     this.members.set(id, { ws, id, name: name || `Player ${slot + 1}`, slot, token, connected: true, graceTimer: null });
     if (!this.hostId) this.hostId = id;
+    if (this.started) this._applyRosterToMatch(); // join in progress → spawn next round
     this._broadcastRoomState();
     return { slot, token };
   }
@@ -183,7 +201,7 @@ export class Room {
     this.controllers.delete(m.slot);
     if (this.started && this.match && this.match.round) {
       // Hand the abandoned tank to the AI so it keeps fighting this round; the
-      // next round's roster (rebuilt below) decides the seat per fillBots.
+      // next round's roster (rebuilt below) drops the empty human seat.
       const player = this.match.players.find((p) => p.slot === m.slot);
       if (player) {
         this.match.round.setController(m.slot, new AIController(player));
@@ -195,9 +213,22 @@ export class Room {
     if (this.members.size === 0) {
       this.stop();
       this._onEmpty?.();
-    } else {
-      this._broadcastRoomState();
+      return;
     }
+    // Online is player-vs-player: if a leaver drops us below the minimum, end
+    // the match so the survivor returns to waiting rather than soloing bots.
+    if (this.started && !this._matchOverSent && this.members.size < MIN_HUMANS_TO_START) {
+      this._endMatchNotEnoughPlayers();
+    }
+    this._broadcastRoomState();
+  }
+
+  /** End a running match early because too few humans remain to keep playing. */
+  _endMatchNotEnoughPlayers() {
+    this._matchOverSent = true;
+    rlog.info('match ended — not enough players', { code: this.code, members: this.members.size });
+    this.broadcast({ t: MSG.MATCH_OVER, winnerSlot: null, winnerName: null, reason: 'notEnoughPlayers' });
+    this.stop();
   }
 
   _firstConnectedId() {
@@ -211,25 +242,27 @@ export class Room {
       .map((m) => ({ id: m.id, name: m.name, slot: m.slot, isHost: m.id === this.hostId, connected: m.connected !== false }));
   }
 
-  /** Build the player list + human controller map from members + fillBots. */
+  /** Build the player list + human controller map: humans (0–3) then bots (4–7). */
   _buildRoster() {
     const players = [];
     const humanControllers = new Map();
-    for (let slot = 0; slot < MAX_SLOTS; slot++) {
-      const human = [...this.members.values()].find((mm) => mm.slot === slot);
-      if (human) {
-        let ctrl = this.controllers.get(slot);
-        if (!ctrl) {
-          ctrl = new NetController();
-          this.controllers.set(slot, ctrl);
-        }
-        humanControllers.set(slot, ctrl);
-        players.push(new Player({ slot, name: human.name, controller: ControllerType.HUMAN, color: colorForSlot(slot) }));
-      } else if (this.fillBots) {
-        const lethal = this.difficulty === Difficulty.LETHAL;
-        players.push(new Player({ slot, name: `Bot ${slot + 1}`, controller: ControllerType.AI, color: colorForSlot(slot), difficulty: this.difficulty, lethal }));
+    // Human seats — one per joined member, at their assigned slot.
+    for (const m of [...this.members.values()].sort((a, b) => a.slot - b.slot)) {
+      let ctrl = this.controllers.get(m.slot);
+      if (!ctrl) {
+        ctrl = new NetController();
+        this.controllers.set(m.slot, ctrl);
       }
+      humanControllers.set(m.slot, ctrl);
+      players.push(new Player({ slot: m.slot, name: m.name, controller: ControllerType.HUMAN, color: colorForSlot(m.slot) }));
     }
+    // Bots stacked above the human seats, each with its own skill.
+    this.bots.slice(0, MAX_BOTS).forEach((b, i) => {
+      const slot = MAX_HUMANS + i;
+      const difficulty = Object.values(Difficulty).includes(b.difficulty) ? b.difficulty : Difficulty.HARD;
+      const lethal = difficulty === Difficulty.LETHAL;
+      players.push(new Player({ slot, name: `Bot ${i + 1}`, controller: ControllerType.AI, color: colorForSlot(slot), difficulty, lethal }));
+    });
     return { players, humanControllers };
   }
 
@@ -244,37 +277,44 @@ export class Room {
   }
 
   // ── match lifecycle ──────────────────────────────────────────────────────
-  setFillBots(on, byId) {
+  /** Host sets the bot roster (count + per-bot skill). Any time → next round. */
+  setBots(bots, byId) {
     if (byId !== this.hostId) return;
-    this.fillBots = !!on;
-    rlog.info('fillBots toggled', { code: this.code, on: this.fillBots, started: this.started });
+    const list = Array.isArray(bots) ? bots.slice(0, MAX_BOTS) : [];
+    this.bots = list.map((b) => ({ difficulty: Object.values(Difficulty).includes(b && b.difficulty) ? b.difficulty : Difficulty.HARD }));
+    rlog.info('bots set', { code: this.code, bots: this.bots.map((b) => b.difficulty), started: this.started });
     if (this.started) this._applyRosterToMatch(); // applies next round
     this._broadcastRoomState();
   }
 
-  /** Host sets bot difficulty (any time → next round) and points-to-win (lobby only). */
-  setSettings({ difficulty, pointsToWin }, byId) {
+  /** Host sets revive-bots (any time → effective immediately) and points-to-win (lobby only). */
+  setSettings({ pointsToWin, reviveBots }, byId) {
     if (byId !== this.hostId) return;
-    if (difficulty && Object.values(Difficulty).includes(difficulty)) {
-      this.difficulty = difficulty;
-      if (this.started) this._applyRosterToMatch();
+    if (typeof reviveBots === 'boolean') {
+      this.reviveBots = reviveBots;
+      if (this.match) this.match.reviveBots = reviveBots;
+      if (this.match && this.match.round) this.match.round.reviveBots = reviveBots;
     }
     if (pointsToWin && !this.started) {
-      const n = Math.max(1, Math.min(20, Math.round(pointsToWin)));
-      this.pointsToWin = n;
+      this.pointsToWin = Math.max(1, Math.min(20, Math.round(pointsToWin)));
     }
-    rlog.info('settings', { code: this.code, difficulty: this.difficulty, pointsToWin: this.pointsToWin, started: this.started });
+    rlog.info('settings', { code: this.code, reviveBots: this.reviveBots, pointsToWin: this.pointsToWin, started: this.started });
     this._broadcastRoomState();
   }
 
+  /** Enough real players present to begin/continue a match. */
+  get canStart() {
+    return this.members.size >= MIN_HUMANS_TO_START;
+  }
+
   start(byId) {
-    if (this.started || byId !== this.hostId) return false;
+    if (this.started || byId !== this.hostId || !this.canStart) return false;
     return this._beginMatch();
   }
 
   /** Host rematch after a match ends — same room, same members. */
   restart(byId) {
-    if (byId !== this.hostId || !this._matchOverSent) return false;
+    if (byId !== this.hostId || !this._matchOverSent || !this.canStart) return false;
     return this._beginMatch();
   }
 
@@ -283,7 +323,7 @@ export class Room {
     const { players, humanControllers } = this._buildRoster();
 
     this.match = new B2Match(this.bus);
-    this.match.configure(players, { pointsToWin: this.pointsToWin, humanControllers });
+    this.match.configure(players, { pointsToWin: this.pointsToWin, humanControllers, reviveBots: this.reviveBots });
     this.match.start(); // emits round:created → _broadcastRoundStart
 
     this._matchOverSent = false;
@@ -294,7 +334,7 @@ export class Room {
     this._last = Date.now();
     if (this._loop) clearInterval(this._loop);
     this._loop = setInterval(() => this._tick(), Math.round(1000 * C.STEP));
-    rlog.info('match started', { code: this.code, fillBots: this.fillBots, players: players.map((p) => `${p.name}/${p.isHuman ? 'H' : 'AI'}`) });
+    rlog.info('match started', { code: this.code, reviveBots: this.reviveBots, players: players.map((p) => `${p.name}/${p.isHuman ? 'H' : 'AI'}`) });
     return true;
   }
 
@@ -302,6 +342,14 @@ export class Room {
     const m = this.members.get(id);
     if (!m || !this.started) return;
     this.controllers.get(m.slot)?.setInput(input);
+  }
+
+  /** Relay a WebRTC voice-signaling message to the member in the target slot. */
+  relayRtc(fromId, msg) {
+    const from = this.members.get(fromId);
+    if (!from) return;
+    const target = [...this.members.values()].find((m) => m.slot === msg.toSlot && m.connected !== false);
+    if (target) this.send(target.id, { t: MSG.RTC, fromSlot: from.slot, kind: msg.kind, payload: msg.payload });
   }
 
   _flushEvents() {
@@ -363,9 +411,11 @@ export class Room {
       t: MSG.ROOM_STATE,
       code: this.code,
       started: this.started,
-      maxSlots: MAX_SLOTS,
-      fillBots: this.fillBots,
-      difficulty: this.difficulty,
+      maxHumans: MAX_HUMANS,
+      maxBots: MAX_BOTS,
+      minToStart: MIN_HUMANS_TO_START,
+      bots: this.bots,
+      reviveBots: this.reviveBots,
       pointsToWin: this.pointsToWin,
       members: this.roster(),
     });

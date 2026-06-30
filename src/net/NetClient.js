@@ -169,8 +169,9 @@ export class NetClient {
   startMatch() {
     this.send({ t: MSG.START_MATCH });
   }
-  setFillBots(on) {
-    this.send({ t: MSG.SET_FILL_BOTS, on });
+  /** Host sets the bot roster: an array of `{difficulty}`, one per AI tank. */
+  setBots(bots) {
+    this.send({ t: MSG.SET_BOTS, bots });
   }
   setSettings(settings) {
     this.send({ t: MSG.SET_SETTINGS, ...settings });
@@ -180,6 +181,10 @@ export class NetClient {
   }
   sendInput(intent) {
     this.send({ t: MSG.INPUT, drive: intent.drive, turn: intent.turn, fire: intent.fire, ability: intent.ability });
+  }
+  /** Relay a voice-signaling payload to a peer by slot. */
+  sendRtc(toSlot, kind, payload) {
+    this.send({ t: MSG.RTC, toSlot, kind, payload });
   }
 
   _startPing() {

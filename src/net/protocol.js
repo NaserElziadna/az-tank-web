@@ -18,9 +18,10 @@ export const MSG = Object.freeze({
   REJOIN: 'rejoin', // reconnect to a reserved slot after a dropped socket
   LEAVE_ROOM: 'leaveRoom',
   START_MATCH: 'startMatch',
-  SET_FILL_BOTS: 'setFillBots', // host toggles AI filling empty seats (lobby + in-game)
-  SET_SETTINGS: 'setSettings', // host sets bot difficulty / points-to-win
+  SET_BOTS: 'setBots', // host sets the bot roster: [{difficulty}, …] (lobby + in-game)
+  SET_SETTINGS: 'setSettings', // host sets points-to-win (lobby) / revive-bots toggle (any time)
   INPUT: 'input',
+  RTC: 'rtc', // WebRTC voice signaling relayed between peers in a room
   PING: 'ping',
   // server → client
   ROOM_STATE: 'roomState', // lobby roster changed

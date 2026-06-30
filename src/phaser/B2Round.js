@@ -398,6 +398,12 @@ export class B2Round {
     this._controllers = new Map();
     this.finished = false;
     this.winnerSlot = null;
+    // Online: with revive on, killed bots respawn while a human is alive, so a
+    // round ends on human elimination rather than a bots-only last-tank duel.
+    this.reviveBots = false;
+    this.allHumansDead = false; // round ended by a simultaneous human wipe (no winner)
+    this._time = 0; // sim clock (s) for scheduling revives
+    this._reviveQueue = []; // [{slot, at}] dead bots awaiting respawn
   }
 
   emit(type, payload) {
@@ -414,21 +420,70 @@ export class B2Round {
     for (const t of this.tanks) if (t.alive) n++;
     return n;
   }
+  /** Tanks belonging to real players (a disconnected human's AI stand-in still counts). */
+  get humanCount() {
+    let n = 0;
+    for (const t of this.tanks) if (t.player.isHuman) n++;
+    return n;
+  }
+  get humansAlive() {
+    let n = 0;
+    for (const t of this.tanks) if (t.alive && t.player.isHuman) n++;
+    return n;
+  }
 
   addTank(player, spawn) {
     const body = this.b2.createTank({ kind: 'tank', slot: player.slot }, spawn.x, spawn.y, spawn.rotation);
     const tank = new B2Tank(player, body);
+    tank.spawn = { x: spawn.x, y: spawn.y, rotation: spawn.rotation }; // reused on revive
     body.GetFixtureList().GetUserData().gameObject.ref = tank;
     this.tanks.push(tank);
     this._bySlot.set(player.slot, tank);
     player.tank = tank;
     return tank;
   }
+
+  /**
+   * Recreate a dead bot's body at its spawn and reset it to full fighting trim.
+   * Death destroyed the Box2D body ({@link _killTank}), so this is a full rebuild,
+   * not an `alive = true` flip. Emits `tank:revived` for the spawn-in effect.
+   */
+  reviveTank(slot) {
+    const tank = this._bySlot.get(slot);
+    if (!tank || tank.alive) return;
+    const spawn = tank.spawn || this.maze.tankSpawns[0];
+    const body = this.b2.createTank({ kind: 'tank', slot }, spawn.x, spawn.y, spawn.rotation);
+    body.GetFixtureList().GetUserData().gameObject.ref = tank;
+    tank.body = body;
+    tank.position.set(spawn.x, spawn.y);
+    tank.prevPosition.copy(tank.position);
+    tank.rotation = spawn.rotation;
+    tank.prevRotation = spawn.rotation;
+    tank.velocity.set(0, 0);
+    tank.hp = tank.maxHp;
+    tank.alive = true;
+    tank.spawnAnim = 0; // fade/scale-in
+    tank.intent = null;
+    // Drop any transient state the old life was carrying.
+    tank.weaponQueue = [];
+    tank.shield = null;
+    tank.speedBoost = null;
+    tank.rapidFireTimer = 0;
+    tank.phaseTimer = 0;
+    tank.phasing = false;
+    tank.reconTimer = 0;
+    tank.ability = null;
+    tank.locked = false;
+    tank.stuck = false;
+    tank._bumpCd = 0;
+    this.emit('tank:revived', { slot, colorKey: tank.colorKey, x: spawn.x, y: spawn.y });
+  }
   setController(slot, controller) {
     this._controllers.set(slot, controller);
   }
 
   update(dt, acceptInput) {
+    this._time += dt;
     // 1. intents
     for (const t of this.tanks) {
       if (!t.alive) continue;
@@ -458,8 +513,49 @@ export class B2Round {
     this.mines = this.mines.filter((m) => !m.dead);
     this.collectibles = this.collectibles.filter((c) => !c.dead);
     this.beams = this.beams.filter((b) => b.life > 0);
+    // 7b. respawn any due bots (only while a human is still in the fight)
+    this._processRevives();
     // 8. win check
-    if (!this.finished && this.aliveCount <= 1 && this.tanks.length > 1) {
+    this._checkFinished();
+  }
+
+  /** Bring back queued bots whose respawn delay has elapsed, if a human remains. */
+  _processRevives() {
+    if (this._reviveQueue.length === 0) return;
+    const due = [];
+    this._reviveQueue = this._reviveQueue.filter((r) => {
+      if (this._time < r.at) return true;
+      due.push(r.slot);
+      return false;
+    });
+    if (!due.length) return;
+    const humanAlive = this.humansAlive > 0;
+    for (const slot of due) if (humanAlive) this.reviveTank(slot); // else let the round end
+  }
+
+  /**
+   * Decide the round. Online is player-vs-player, so the round resolves on human
+   * elimination: the last human alive wins (you never sit watching bots fight).
+   * Falls back to the classic last-tank-standing rule when there are no humans.
+   */
+  _checkFinished() {
+    if (this.finished) return;
+    const humanCount = this.humanCount;
+    if (humanCount >= 2) {
+      const alive = this.humansAlive;
+      if (alive === 0) {
+        // Simultaneous wipe — no winner; the match replays the round.
+        this.finished = true;
+        this.allHumansDead = true;
+        this.winnerSlot = null;
+        this.emit('round:decided', { winnerSlot: null });
+      } else if (alive <= 1) {
+        this.finished = true;
+        const s = this.tanks.find((t) => t.alive && t.player.isHuman);
+        this.winnerSlot = s ? s.slot : null;
+        this.emit('round:decided', { winnerSlot: this.winnerSlot });
+      }
+    } else if (this.aliveCount <= 1 && this.tanks.length > 1) {
       this.finished = true;
       const s = this.tanks.find((t) => t.alive);
       this.winnerSlot = s ? s.slot : null;
@@ -543,6 +639,11 @@ export class B2Round {
     if (this.killLog.length > 16) this.killLog.shift();
     this.b2.destroyBody(tank.body);
     this.emit('tank:destroyed', { slot: tank.slot, killerSlot, colorKey: tank.colorKey, x: tank.position.x, y: tank.position.y });
+    // Revive a fallen bot after a short delay, as long as a human is still in the
+    // fight — keeps live opponents on the board without ending the round.
+    if (this.reviveBots && !tank.player.isHuman && this.humansAlive > 0) {
+      this._reviveQueue.push({ slot: tank.slot, at: this._time + C.FLOW.REVIVE_DELAY });
+    }
   }
 
   _pickup(c, tank) {

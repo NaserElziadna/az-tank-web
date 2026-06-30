@@ -343,6 +343,29 @@ body {
   padding: 6px 14px;
   margin-right: 10px;
 }
+.topbar__voice {
+  appearance: none;
+  cursor: pointer;
+  pointer-events: auto; /* .topbar is pointer-events:none; opt back in */
+  font-size: 16px;
+  line-height: 1;
+  color: #fff;
+  background: #2a2e36;
+  border: 2px solid #3a3f49;
+  border-radius: 999px;
+  width: 38px;
+  height: 32px;
+  margin-right: 8px;
+}
+.topbar__voice--on {
+  background: #2c7a3f;
+  border-color: #4caf50;
+}
+.topbar__voice--muted,
+.topbar__voice--deaf {
+  background: #7a2c2c;
+  border-color: #d23b3b;
+}
 .topbar__bots--off {
   background: #4a4f59;
 }

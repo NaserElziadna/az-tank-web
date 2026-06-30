@@ -45,6 +45,8 @@ export const TANK_COLORS = [
   makeTankColor('Yellow', '#f7ef5c'),
   makeTankColor('Orange', '#dc771e'),
   makeTankColor('Magenta', '#bb169f'),
+  makeTankColor('Cyan', '#13b6c4'),
+  makeTankColor('Purple', '#7a3cd0'),
 ];
 
 /** Boss tank colour — dark gunmetal armour with hot-red accents/bullets. */

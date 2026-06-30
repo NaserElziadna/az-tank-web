@@ -7,6 +7,7 @@ import { PhaserGame } from '../phaser/PhaserGame.js';
 import { PhaserOnlineGame } from '../phaser/PhaserOnlineGame.js';
 import { PhaserAudio } from '../phaser/PhaserAudio.js';
 import { isTouchDevice } from '../phaser/TouchControls.js';
+import { VoiceChat } from '../net/VoiceChat.js';
 import { ControllerType, Difficulty } from '../models/enums.js';
 import { el, clear } from '../ui/dom.js';
 import { log } from '../core/log/Logger.js';
@@ -69,6 +70,10 @@ export class App {
       this.phaser.destroy();
       this.phaser = null;
     }
+    if (this.voice) {
+      this.voice.dispose();
+      this.voice = null;
+    }
     if (this.online) {
       this.online.destroy();
       this.online = null;
@@ -104,20 +109,29 @@ export class App {
   /**
    * @param {import('../net/NetClient.js').NetClient} net
    * @param {object} firstRound the roundStart that triggered launch
-   * @param {{isHost:boolean, fillBots:boolean}} [meta]
+   * @param {{isHost:boolean, reviveBots:boolean}} [meta]
    */
   startOnlineGame(net, firstRound, meta = {}) {
     this.onlineIsHost = !!meta.isHost;
-    this.onlineFillBots = meta.fillBots !== false;
+    this.onlineReviveBots = meta.reviveBots !== false;
 
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
     this.pingEl = el('span.topbar__ping', { text: '' });
-    this.botToggleEl = el('button.topbar__bots', { text: '', on: { click: () => net.setFillBots(!this.onlineFillBots) } });
+    this.botToggleEl = el('button.topbar__bots', { text: '', on: { click: () => net.setSettings({ reviveBots: !this.onlineReviveBots }) } });
     this._hudStrip = el('div.hud-strip');
+
+    // Voice chat (opt-in WebRTC). Mic button enables, then toggles mute; the
+    // speaker button toggles deafen. Both are independent.
+    this.voice = new VoiceChat(net, meta.localSlot);
+    this.voiceMicEl = el('button.topbar__voice', { text: '🎤', title: 'Enable voice', on: { click: () => this._toggleMic() } });
+    this.voiceDeafEl = el('button.topbar__voice', { text: '🔊', title: 'Deafen', on: { click: () => this._toggleDeafen() } });
+
     const topbar = el('div.topbar', {}, [
       el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.router.go('/') } }),
       el('span.topbar__spacer'),
+      this.voiceMicEl,
+      this.voiceDeafEl,
       this.botToggleEl,
       this.pingEl,
     ]);
@@ -132,9 +146,10 @@ export class App {
     alog.info('startOnlineGame', { round: firstRound?.round, isHost: this.onlineIsHost, slot: meta.localSlot });
     this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound, bus: this.bus, localSlot: meta.localSlot });
 
-    // Keep host/fill state current; re-show the game on a rematch round.
+    // Keep host/revive state current; re-show the game on a rematch round.
     net.on('roomState', (s) => {
-      if (typeof s.fillBots === 'boolean') this.onlineFillBots = s.fillBots;
+      if (typeof s.reviveBots === 'boolean') this.onlineReviveBots = s.reviveBots;
+      this.voice?.setRoster((s.members || []).map((m) => m.slot));
       this._refreshOnlineTopbar();
     });
     net.on('roundStart', () => {
@@ -188,13 +203,56 @@ export class App {
 
   _refreshOnlineTopbar() {
     if (this.botToggleEl) {
-      this.botToggleEl.textContent = `🤖 Bots ${this.onlineFillBots ? 'ON' : 'OFF'}`;
-      this.botToggleEl.classList.toggle('topbar__bots--off', !this.onlineFillBots);
+      this.botToggleEl.textContent = `♻ Revive ${this.onlineReviveBots ? 'ON' : 'OFF'}`;
+      this.botToggleEl.classList.toggle('topbar__bots--off', !this.onlineReviveBots);
       this.botToggleEl.style.display = this.onlineIsHost ? '' : 'none';
     }
     if (this.pingEl) {
       const rtt = this.onlineNet?.rtt;
       this.pingEl.textContent = rtt != null ? `${Math.round(rtt)} ms` : '…';
+    }
+    this._refreshVoiceUI();
+  }
+
+  /** First mic tap enables voice (mic permission); later taps toggle mute. */
+  async _toggleMic() {
+    const v = this.voice;
+    if (!v) return;
+    if (!v.enabled) {
+      const ok = await v.enable();
+      if (!ok) this._showOnlineNotice('Microphone permission denied.', false), setTimeout(() => this._hideOnlineNotice(), 1800);
+    } else {
+      v.setMuted(!v.muted);
+    }
+    this._refreshVoiceUI();
+  }
+
+  _toggleDeafen() {
+    if (!this.voice) return;
+    this.voice.setDeafened(!this.voice.deafened);
+    this._refreshVoiceUI();
+  }
+
+  _refreshVoiceUI() {
+    const v = this.voice;
+    if (!v || !this.voiceMicEl) return;
+    if (!v.enabled) {
+      this.voiceMicEl.textContent = '🎤';
+      this.voiceMicEl.title = 'Enable voice chat';
+      this.voiceMicEl.className = 'topbar__voice';
+    } else if (v.muted) {
+      this.voiceMicEl.textContent = '🔇';
+      this.voiceMicEl.title = 'Unmute mic';
+      this.voiceMicEl.className = 'topbar__voice topbar__voice--muted';
+    } else {
+      this.voiceMicEl.textContent = '🎙️';
+      this.voiceMicEl.title = 'Mute mic';
+      this.voiceMicEl.className = 'topbar__voice topbar__voice--on';
+    }
+    if (this.voiceDeafEl) {
+      this.voiceDeafEl.textContent = v.deafened ? '🔈' : '🔊';
+      this.voiceDeafEl.title = v.deafened ? 'Undeafen' : 'Deafen';
+      this.voiceDeafEl.className = 'topbar__voice' + (v.deafened ? ' topbar__voice--deaf' : '');
     }
   }
 
@@ -227,14 +285,17 @@ export class App {
   }
 
   _showOnlineMatchOver(m) {
+    const notEnough = m && m.reason === 'notEnoughPlayers';
     const name = m && (m.winnerName || (m.winnerSlot != null ? `Player ${m.winnerSlot + 1}` : null));
+    const headline = notEnough ? 'Not enough players' : name ? `${name} wins the match!` : 'Match over';
     clear(this.matchPanel);
     const actions = [];
     if (this.onlineIsHost) actions.push(el('button.btn', { text: '↻ Play Again', on: { click: () => this.onlineNet?.startMatch() } }));
     actions.push(el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }));
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
-        el('div.overlay__big', { text: name ? `${name} wins the match!` : 'Match over' }),
+        el('div.overlay__big', { text: headline }),
+        notEnough ? el('p', { text: 'Waiting for more players to join…', style: { color: 'var(--text-dim)' } }) : null,
         this.onlineIsHost ? null : el('p', { text: 'Waiting for the host to start a rematch…', style: { color: 'var(--text-dim)' } }),
         el('div', { style: { display: 'flex', gap: '14px' } }, actions),
       ]),
