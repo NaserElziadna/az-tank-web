@@ -41,8 +41,11 @@ export class VoiceChat {
     }
     this.enabled = true;
     this.setMuted(this.muted); // apply current mute state to the fresh track
-    vlog.info('voice enabled', { mySlot: this.mySlot, peers: [...this.roster] });
+    vlog.info('voice enabled', { mySlot: this.mySlot, roster: [...this.roster], known: [...this.enabledPeers] });
     for (const slot of this.roster) this._sendHello(slot);
+    // Connect to any peer we already know is voice-enabled (covers the case
+    // where the lower-slot player enables second — they must initiate the offer).
+    for (const slot of this.enabledPeers) this._maybeConnect(slot);
     return true;
   }
 

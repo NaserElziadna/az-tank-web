@@ -121,9 +121,9 @@ export class App {
     this.botToggleEl = el('button.topbar__bots', { text: '', on: { click: () => net.setSettings({ reviveBots: !this.onlineReviveBots }) } });
     this._hudStrip = el('div.hud-strip');
 
-    // Voice chat (opt-in WebRTC). Mic button enables, then toggles mute; the
-    // speaker button toggles deafen. Both are independent.
-    this.voice = new VoiceChat(net, meta.localSlot);
+    // Voice chat (opt-in WebRTC). The instance is created AFTER _setScreen below
+    // (otherwise _teardownGame would dispose it immediately). Mic button enables
+    // then toggles mute; speaker button toggles deafen.
     this.voiceMicEl = el('button.topbar__voice', { text: '🎤', title: 'Enable voice', on: { click: () => this._toggleMic() } });
     this.voiceDeafEl = el('button.topbar__voice', { text: '🔊', title: 'Deafen', on: { click: () => this._toggleDeafen() } });
 
@@ -141,6 +141,7 @@ export class App {
     this._setScreen(root);
     this.onlineScreen = null; // handed off; its tank is now server-driven
     this.onlineNet = net;
+    this.voice = new VoiceChat(net, meta.localSlot); // after _setScreen so teardown can't dispose it
     this._refreshOnlineTopbar();
 
     alog.info('startOnlineGame', { round: firstRound?.round, isHost: this.onlineIsHost, slot: meta.localSlot });
@@ -151,6 +152,17 @@ export class App {
       if (typeof s.reviveBots === 'boolean') this.onlineReviveBots = s.reviveBots;
       this.voice?.setRoster((s.members || []).map((m) => m.slot));
       this._refreshOnlineTopbar();
+    });
+    // roomState only fires on lobby changes, so also feed the voice roster from
+    // snapshots (always flowing) — otherwise enabling voice mid-match finds no
+    // peers. Deduped to the set of human slots so it's effectively free.
+    net.on('snapshot', (s) => {
+      const slots = (s.players || []).filter((p) => p.isHuman).map((p) => p.slot);
+      const sig = slots.join(',');
+      if (sig !== this._voiceRosterSig) {
+        this._voiceRosterSig = sig;
+        this.voice?.setRoster(slots);
+      }
     });
     net.on('roundStart', () => {
       if (this.matchPanel) {
