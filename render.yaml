@@ -6,7 +6,9 @@ services:
     name: az-tank
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    # --include=dev so Vite (a devDependency) is installed even if Render sets
+    # NODE_ENV=production during the build.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true
