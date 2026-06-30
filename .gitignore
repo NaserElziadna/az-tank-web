@@ -3,6 +3,7 @@ dist/
 .DS_Store
 *.log
 .playwright-mcp/
+logs/
 
 # Reference clone used only for studying mechanics — never part of the build.
 cdn.tanktrouble.com/

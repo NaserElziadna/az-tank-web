@@ -76,6 +76,24 @@ and with the server up, `node server/_netcheck.js` (protocol flow).
 Production (Render): `render.yaml` builds the client and runs one Node service
 that serves the bundle **and** the WebSocket on the same port.
 
+## Logging (one file for the whole system)
+
+A shared logger ([src/core/log/Logger.js](src/core/log/Logger.js)) runs in both
+the browser and the server. Browser entries are shipped (batched) to the
+server's `/log` endpoint, so **everything lands in one readable file**:
+
+```
+logs/az-tank.log     # truncated on each server start
+```
+
+Lines are `HH:MM:SS.mmm LEVEL [src/scope] message {data}` where `src` is
+`client` or `server`. Uncaught client errors, the full net handshake, round
+starts, snapshot heartbeats, and any server tick crash all go here — so a
+problem can be diagnosed by reading the file instead of opening devtools.
+
+Use it anywhere: `import { log } from '.../Logger.js'; const l = log.scope('foo');
+l.info('did a thing', { n })`.
+
 ## Acceptance checklist (for the human's final test)
 
 - [ ] Create room → get code; second browser joins with code.

@@ -14,12 +14,40 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { MSG, PROTOCOL_VERSION } from '../src/net/protocol.js';
 import { RoomManager } from './RoomManager.js';
+import { log } from '../src/core/log/Logger.js';
+import { fileSink, resetLogFile, LOG_FILE } from './logSink.js';
+
+// Route all logging (server + forwarded browser batches) into one file.
+resetLogFile();
+log.setSink(fileSink);
+const slog = log.scope('server');
+
+process.on('uncaughtException', (err) => slog.error('uncaughtException', err));
+process.on('unhandledRejection', (err) => slog.error('unhandledRejection', err));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 
 const app = express();
 const DIST = path.join(__dirname, '..', 'dist');
+
+// Browser log ingest. text/plain avoids a CORS preflight in dev; we still set a
+// permissive header so the POST is never blocked.
+app.use('/log', (req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+app.post('/log', express.text({ type: () => true, limit: '2mb' }), (req, res) => {
+  try {
+    const batch = JSON.parse(req.body || '[]');
+    for (const e of batch) log.raw(e);
+  } catch {
+    /* ignore malformed batches */
+  }
+  res.status(204).end();
+});
+
 app.use(express.static(DIST));
 app.get('/healthz', (_req, res) => res.json({ ok: true, rooms: rooms.count, v: PROTOCOL_VERSION }));
 // SPA fallback so a deep link / refresh still serves the client. (Express 5 no
@@ -37,6 +65,7 @@ let nextId = 1;
 
 wss.on('connection', (ws) => {
   const conn = { id: `c${nextId++}`, room: null };
+  slog.info('ws connect', { id: conn.id, clients: wss.clients.size });
 
   ws.on('message', (raw) => {
     let msg;
@@ -45,17 +74,20 @@ wss.on('connection', (ws) => {
     } catch {
       return;
     }
-    handle(ws, conn, msg);
+    try {
+      handle(ws, conn, msg);
+    } catch (err) {
+      slog.error('message handler threw', { id: conn.id, t: msg && msg.t, err: { message: err.message, stack: err.stack } });
+    }
   });
 
   ws.on('close', () => {
+    slog.info('ws close', { id: conn.id, room: conn.room?.code || null });
     if (conn.room) conn.room.removeMember(conn.id);
     conn.room = null;
   });
 
-  ws.on('error', () => {
-    /* close handler does the cleanup */
-  });
+  ws.on('error', (err) => slog.warn('ws error', { id: conn.id, err: { message: err.message } }));
 });
 
 function handle(ws, conn, msg) {
@@ -74,7 +106,8 @@ function handle(ws, conn, msg) {
       break;
     }
     case MSG.START_MATCH: {
-      conn.room?.start(conn.id);
+      const ok = conn.room?.start(conn.id);
+      slog.info('startMatch', { id: conn.id, room: conn.room?.code || null, ok: !!ok });
       break;
     }
     case MSG.INPUT: {
@@ -99,6 +132,7 @@ function joinRoom(ws, conn, room, name) {
   const slot = room.addMember(conn.id, ws, name);
   if (slot < 0) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Could not join' });
   conn.room = room;
+  slog.info('joinRoom', { id: conn.id, room: room.code, slot, isHost: room.hostId === conn.id, members: room.members.size });
   send(ws, { t: MSG.JOIN_RESULT, ok: true, code: room.code, slot, isHost: room.hostId === conn.id });
 }
 
@@ -107,5 +141,5 @@ function send(ws, msg) {
 }
 
 server.listen(PORT, () => {
-  console.log(`AZ Tank server listening on :${PORT}  (ws path /ws, protocol v${PROTOCOL_VERSION})`);
+  slog.info('listening', { port: Number(PORT), wsPath: '/ws', protocol: PROTOCOL_VERSION, logFile: LOG_FILE });
 });

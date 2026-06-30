@@ -1,4 +1,7 @@
 import { MSG } from './protocol.js';
+import { log } from '../core/log/Logger.js';
+
+const nlog = log.scope('net');
 
 /**
  * Browser-side WebSocket wrapper for the AZ Tank game server.
@@ -30,24 +33,29 @@ export class NetClient {
   }
 
   connect() {
+    nlog.info('connecting', { url: this.url });
     return new Promise((resolve, reject) => {
       try {
         this.ws = new WebSocket(this.url);
       } catch (e) {
+        nlog.error('connect threw', e);
         return reject(e);
       }
       this.ws.onopen = () => {
         this._open = true;
         this._startPing();
+        nlog.info('connected', { url: this.url });
         resolve();
       };
       this.ws.onerror = (e) => {
+        nlog.error('socket error', { open: this._open, type: e && e.type });
         if (!this._open) reject(new Error('Could not connect to game server'));
         this._emit('netError', e);
       };
-      this.ws.onclose = () => {
+      this.ws.onclose = (e) => {
         this._open = false;
         this._stopPing();
+        nlog.warn('socket closed', { code: e && e.code, reason: e && e.reason });
         this._emit('netClose');
       };
       this.ws.onmessage = (ev) => {
@@ -62,9 +70,21 @@ export class NetClient {
           this.rtt = this.rtt == null ? sample : this.rtt * 0.8 + sample * 0.2;
           return;
         }
+        this._logIncoming(msg);
         this._emit(msg.t, msg);
       };
     });
+  }
+
+  /** Log incoming messages, throttling the high-frequency snapshot stream. */
+  _logIncoming(msg) {
+    if (msg.t === MSG.SNAPSHOT) {
+      this._snapN = (this._snapN || 0) + 1;
+      if (this._snapN === 1) nlog.info('first snapshot', { phase: msg.phase, tanks: msg.tanks?.length });
+      else if (this._snapN % 100 === 0) nlog.debug('snapshots', { n: this._snapN });
+      return;
+    }
+    nlog.info(`recv ${msg.t}`, msg.t === MSG.ROUND_START ? { round: msg.round } : msg.t === MSG.JOIN_RESULT ? { ok: msg.ok, slot: msg.slot } : undefined);
   }
 
   on(type, fn) {

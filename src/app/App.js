@@ -7,6 +7,9 @@ import { PhaserOnlineGame } from '../phaser/PhaserOnlineGame.js';
 import { PhaserAudio } from '../phaser/PhaserAudio.js';
 import { ControllerType, Difficulty } from '../models/enums.js';
 import { el, clear } from '../ui/dom.js';
+import { log } from '../core/log/Logger.js';
+
+const alog = log.scope('app');
 
 const VERSION = 'v2.0';
 
@@ -76,8 +79,12 @@ export class App {
     this.onlineScreen = null; // handed off; its tank is now server-driven
     this.onlineNet = net;
 
+    alog.info('startOnlineGame', { round: firstRound?.round });
     this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound });
-    net.on('matchOver', (m) => this._showOnlineMatchOver(m));
+    net.on('matchOver', (m) => {
+      alog.info('matchOver', { winnerSlot: m?.winnerSlot });
+      this._showOnlineMatchOver(m);
+    });
   }
 
   _showOnlineMatchOver(m) {

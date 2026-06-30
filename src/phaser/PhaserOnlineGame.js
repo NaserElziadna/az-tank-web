@@ -7,7 +7,9 @@ import { TouchControls, isTouchDevice } from './TouchControls.js';
 import { AssetStore } from './AssetStore.js';
 import { TankIconCompositor } from './TankIconCompositor.js';
 import { RemoteMatch } from '../net/RemoteMatch.js';
+import { log } from '../core/log/Logger.js';
 
+const glog = log.scope('game');
 const INPUT_HZ = 30;
 const INPUT_INTERVAL = 1 / INPUT_HZ;
 
@@ -35,10 +37,12 @@ export class PhaserOnlineGame {
     this._inputAcc = 0;
     this._lastInput = null;
 
+    glog.info('online game created', { hasInitialRound: !!initialRound });
     // The roundStart that triggered the launch was already dispatched before we
     // subscribed, so apply it directly to avoid waiting for the next round.
     if (initialRound) this.remote.onRoundStart(initialRound);
 
+    this._noSnapWarned = false;
     this._unsub = [
       net.on('roundStart', (m) => this.remote.onRoundStart(m)),
       net.on('snapshot', (m) => this.remote.pushSnapshot(m)),
@@ -90,6 +94,14 @@ export class PhaserOnlineGame {
       this.net.sendInput(intent);
     }
     if (this.renderer) this.renderer.update(dt);
+
+    // Watchdog: a round exists but no snapshots are arriving → the symptom of a
+    // dead server loop or a closed socket. Log it once so it shows in the file.
+    this._aliveTime = (this._aliveTime || 0) + dt;
+    if (!this._noSnapWarned && this._aliveTime > 2 && this.remote.round && this.remote._buf.length === 0) {
+      this._noSnapWarned = true;
+      glog.warn('no snapshots after 2s', { netOpen: this.net.ws?.readyState, rtt: this.net.rtt });
+    }
   }
 
   _readLocalInput() {

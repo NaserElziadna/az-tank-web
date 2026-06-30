@@ -1,6 +1,9 @@
 import { Maze } from '../maze/Maze.js';
 import { C } from '../constants/GameConstants.js';
 import { RoundPhase } from '../models/enums.js';
+import { log } from '../core/log/Logger.js';
+
+const mlog = log.scope('remote');
 
 const INTERP_DELAY_MS = 100; // render ~2 snapshots in the past to absorb jitter
 const BUFFER_MAX = 16;
@@ -36,9 +39,18 @@ export class RemoteMatch {
 
   /** New round: rebuild the real maze from its tile grid and reset buffers. */
   onRoundStart(msg) {
-    this.round = new RemoteRound(new Maze(msg.maze.tiles));
-    this._meta = msg.players || [];
-    this._buf.length = 0;
+    // The launch path can deliver the same roundStart twice (initialRound + the
+    // live event dispatch); rebuild the maze only once per round.
+    if (this._appliedRound === msg.round && this.round) return;
+    this._appliedRound = msg.round;
+    try {
+      this.round = new RemoteRound(new Maze(msg.maze.tiles));
+      this._meta = msg.players || [];
+      this._buf.length = 0;
+      mlog.info('round start applied', { round: msg.round, maze: `${msg.maze.tiles.length}x${msg.maze.tiles[0].length}` });
+    } catch (err) {
+      mlog.error('onRoundStart failed', err);
+    }
   }
 
   /** Buffer an authoritative snapshot (called on each SNAPSHOT message). */

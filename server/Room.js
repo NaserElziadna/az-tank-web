@@ -6,6 +6,9 @@ import { colorForSlot } from '../src/rendering/Palette.js';
 import { C } from '../src/constants/GameConstants.js';
 import { MSG, serializeMaze, buildSnapshot } from '../src/net/protocol.js';
 import { NetController } from './NetController.js';
+import { log } from '../src/core/log/Logger.js';
+
+const rlog = log.scope('room');
 
 const MAX_SLOTS = 4; // classic 2–4 arena; humans fill low slots, bots fill the rest
 const SNAP_HZ = 20; // authoritative snapshot rate
@@ -111,8 +114,10 @@ export class Room {
     this._matchOverSent = false;
     this._acc = 0;
     this._snapAcc = 0;
+    this._snapCount = 0;
     this._last = Date.now();
     this._loop = setInterval(() => this._tick(), Math.round(1000 * C.STEP));
+    rlog.info('match started', { code: this.code, players: players.map((p) => `${p.name}/${p.isHuman ? 'H' : 'AI'}`) });
     return true;
   }
 
@@ -124,29 +129,39 @@ export class Room {
 
   _tick() {
     if (!this.match) return;
-    const now = Date.now();
-    let dt = (now - this._last) / 1000;
-    this._last = now;
-    if (dt > 0.25) dt = 0.25;
+    try {
+      const now = Date.now();
+      let dt = (now - this._last) / 1000;
+      this._last = now;
+      if (dt > 0.25) dt = 0.25;
 
-    this._acc += dt;
-    let steps = 0;
-    while (this._acc >= C.STEP && steps < 5) {
-      this.match.update(C.STEP);
-      this._acc -= C.STEP;
-      steps++;
-    }
-    if (steps === 5) this._acc = 0;
+      this._acc += dt;
+      let steps = 0;
+      while (this._acc >= C.STEP && steps < 5) {
+        this.match.update(C.STEP);
+        this._acc -= C.STEP;
+        steps++;
+      }
+      if (steps === 5) this._acc = 0;
 
-    this._snapAcc += dt;
-    if (this._snapAcc >= SNAP_INTERVAL) {
-      this._snapAcc = 0;
-      this.broadcast(buildSnapshot(this.match));
-    }
+      this._snapAcc += dt;
+      if (this._snapAcc >= SNAP_INTERVAL) {
+        this._snapAcc = 0;
+        this.broadcast(buildSnapshot(this.match));
+        // First snapshot + a heartbeat every ~5s confirm the loop is alive.
+        if (this._snapCount === 0) rlog.info('first snapshot', { code: this.code, phase: this.match.phase });
+        else if (this._snapCount % (SNAP_HZ * 5) === 0) rlog.debug('snapshot heartbeat', { code: this.code, n: this._snapCount, phase: this.match.phase });
+        this._snapCount++;
+      }
 
-    if (this.match.matchOver && !this._matchOverSent) {
-      this._matchOverSent = true;
-      this.broadcast({ t: MSG.MATCH_OVER, winnerSlot: this.match.matchWinner ? this.match.matchWinner.slot : null });
+      if (this.match.matchOver && !this._matchOverSent) {
+        this._matchOverSent = true;
+        rlog.info('match over', { code: this.code, winnerSlot: this.match.matchWinner ? this.match.matchWinner.slot : null });
+        this.broadcast({ t: MSG.MATCH_OVER, winnerSlot: this.match.matchWinner ? this.match.matchWinner.slot : null });
+        this.stop();
+      }
+    } catch (err) {
+      rlog.error('tick crashed — stopping room loop', { code: this.code, snapCount: this._snapCount, err: { message: err.message, stack: err.stack } });
       this.stop();
     }
   }
@@ -163,6 +178,8 @@ export class Room {
 
   _broadcastRoundStart() {
     if (!this.match || !this.match.sim) return;
+    const tiles = this.match.sim.maze.tiles;
+    rlog.info('round start', { code: this.code, round: this.match.roundNumber, maze: `${tiles.length}x${tiles[0].length}` });
     this.broadcast({
       t: MSG.ROUND_START,
       round: this.match.roundNumber,
