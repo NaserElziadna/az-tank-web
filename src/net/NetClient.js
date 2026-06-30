@@ -20,6 +20,11 @@ export class NetClient {
     /** Smoothed round-trip time in ms (null until first pong). */
     this.rtt = null;
     this._pingTimer = null;
+    // Reconnect state: a session token + room code let us reclaim our slot.
+    this.token = null;
+    this.code = null;
+    this._closing = false;
+    this._reconnecting = false;
   }
 
   static defaultUrl() {
@@ -33,47 +38,99 @@ export class NetClient {
   }
 
   connect() {
-    nlog.info('connecting', { url: this.url });
+    this._closing = false;
+    return this._openSocket(false);
+  }
+
+  _openSocket(isReconnect) {
+    nlog.info(isReconnect ? 'reconnecting…' : 'connecting', { url: this.url });
     return new Promise((resolve, reject) => {
+      let ws;
       try {
-        this.ws = new WebSocket(this.url);
+        ws = new WebSocket(this.url);
       } catch (e) {
         nlog.error('connect threw', e);
         return reject(e);
       }
-      this.ws.onopen = () => {
+      this.ws = ws;
+      ws.onopen = () => {
         this._open = true;
         this._startPing();
-        nlog.info('connected', { url: this.url });
+        if (isReconnect && this.code && this.token) {
+          this.send({ t: MSG.REJOIN, code: this.code, token: this.token });
+        } else {
+          nlog.info('connected', { url: this.url });
+        }
         resolve();
       };
-      this.ws.onerror = (e) => {
+      ws.onerror = (e) => {
         nlog.error('socket error', { open: this._open, type: e && e.type });
         if (!this._open) reject(new Error('Could not connect to game server'));
         this._emit('netError', e);
       };
-      this.ws.onclose = (e) => {
+      ws.onclose = (e) => {
         this._open = false;
         this._stopPing();
+        if (this._closing) return this._emit('netClose');
+        // Unexpected drop while in a room → try to reconnect and reclaim our slot.
+        if (this.token && this.code) {
+          nlog.warn('socket dropped — reconnecting', { code: e && e.code });
+          return this._scheduleReconnect(1);
+        }
         nlog.warn('socket closed', { code: e && e.code, reason: e && e.reason });
         this._emit('netClose');
       };
-      this.ws.onmessage = (ev) => {
-        let msg;
-        try {
-          msg = JSON.parse(ev.data);
-        } catch {
-          return;
-        }
-        if (msg.t === MSG.PONG && msg.time != null) {
-          const sample = performance.now() - msg.time;
-          this.rtt = this.rtt == null ? sample : this.rtt * 0.8 + sample * 0.2;
-          return;
-        }
-        this._logIncoming(msg);
-        this._emit(msg.t, msg);
-      };
+      ws.onmessage = (ev) => this._onMessage(ev);
     });
+  }
+
+  _onMessage(ev) {
+    let msg;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch {
+      return;
+    }
+    if (msg.t === MSG.PONG && msg.time != null) {
+      const sample = performance.now() - msg.time;
+      this.rtt = this.rtt == null ? sample : this.rtt * 0.8 + sample * 0.2;
+      return;
+    }
+    if ((msg.t === MSG.JOIN_RESULT || msg.t === MSG.REJOIN_RESULT) && msg.ok) {
+      if (msg.token) this.token = msg.token;
+      if (msg.code) this.code = msg.code;
+    }
+    if (msg.t === MSG.REJOIN_RESULT) {
+      this._reconnecting = false;
+      if (msg.ok) {
+        nlog.info('reconnected', { slot: msg.slot });
+        this._emit('reconnected', msg);
+      } else {
+        nlog.warn('reconnect rejected', { reason: msg.reason });
+        this._emit('reconnectFailed', msg);
+        this.close();
+      }
+      return; // internal to reconnect; don't surface to game handlers
+    }
+    this._logIncoming(msg);
+    this._emit(msg.t, msg);
+  }
+
+  _scheduleReconnect(attempt) {
+    if (attempt > 6) {
+      nlog.error('reconnect gave up', { attempts: attempt - 1 });
+      this._reconnecting = false;
+      this._emit('reconnectFailed', {});
+      this._emit('netClose');
+      return;
+    }
+    this._reconnecting = true;
+    this._emit('reconnecting', { attempt });
+    const delay = Math.min(400 * attempt, 3000);
+    setTimeout(() => {
+      if (this._closing) return;
+      this._openSocket(true).catch(() => this._scheduleReconnect(attempt + 1));
+    }, delay);
   }
 
   /** Log incoming messages, throttling the high-frequency snapshot stream. */
@@ -135,6 +192,7 @@ export class NetClient {
   }
 
   close() {
+    this._closing = true; // intentional close → don't auto-reconnect
     this._stopPing();
     try {
       this.ws?.close();

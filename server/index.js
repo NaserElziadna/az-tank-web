@@ -83,7 +83,8 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     slog.info('ws close', { id: conn.id, room: conn.room?.code || null });
-    if (conn.room) conn.room.removeMember(conn.id);
+    // Reserve the slot for a grace period so the player can reconnect.
+    if (conn.room) conn.room.handleDisconnect(conn.id);
     conn.room = null;
   });
 
@@ -103,6 +104,14 @@ function handle(ws, conn, msg) {
       if (room.started) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Match already started' });
       if (room.isFull) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Room is full' });
       joinRoom(ws, conn, room, msg.name);
+      break;
+    }
+    case MSG.REJOIN: {
+      const room = rooms.getRoom(msg.code);
+      const res = room ? room.rejoin(conn.id, ws, msg.token) : null;
+      if (!res) return send(ws, { t: MSG.REJOIN_RESULT, ok: false, reason: 'Session expired' });
+      conn.room = room;
+      send(ws, { t: MSG.REJOIN_RESULT, ok: true, code: room.code, slot: res.slot, token: res.token, isHost: res.isHost });
       break;
     }
     case MSG.START_MATCH: {
@@ -139,11 +148,11 @@ function handle(ws, conn, msg) {
 }
 
 function joinRoom(ws, conn, room, name) {
-  const slot = room.addMember(conn.id, ws, name);
-  if (slot < 0) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Could not join' });
+  const res = room.addMember(conn.id, ws, name);
+  if (!res) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Could not join' });
   conn.room = room;
-  slog.info('joinRoom', { id: conn.id, room: room.code, slot, isHost: room.hostId === conn.id, members: room.members.size });
-  send(ws, { t: MSG.JOIN_RESULT, ok: true, code: room.code, slot, isHost: room.hostId === conn.id });
+  slog.info('joinRoom', { id: conn.id, room: room.code, slot: res.slot, isHost: room.hostId === conn.id, members: room.members.size });
+  send(ws, { t: MSG.JOIN_RESULT, ok: true, code: room.code, slot: res.slot, token: res.token, isHost: room.hostId === conn.id });
 }
 
 function send(ws, msg) {

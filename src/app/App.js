@@ -116,6 +116,12 @@ export class App {
       alog.info('matchOver', { winnerSlot: m?.winnerSlot, winner: m?.winnerName });
       this._showOnlineMatchOver(m);
     });
+    net.on('reconnecting', (e) => this._showOnlineNotice(`Reconnecting…${e?.attempt > 1 ? ` (${e.attempt})` : ''}`, false));
+    net.on('reconnected', () => this._hideOnlineNotice());
+    net.on('reconnectFailed', () => this._showOnlineNotice('Disconnected from the server.', true));
+    net.on('netClose', () => {
+      if (this.online && !this.onlineNet?._closing) this._showOnlineNotice('Disconnected from the server.', true);
+    });
 
     // Live ping readout in the topbar.
     if (this._pingTimer) clearInterval(this._pingTimer);
@@ -132,6 +138,23 @@ export class App {
       const rtt = this.onlineNet?.rtt;
       this.pingEl.textContent = rtt != null ? `${Math.round(rtt)} ms` : '…';
     }
+  }
+
+  /** Transient overlay for connection state (reconnecting / disconnected). */
+  _showOnlineNotice(text, withMenu) {
+    if (!this.matchPanel || !this.online) return;
+    clear(this.matchPanel);
+    const kids = [el('div.overlay__big', { text })];
+    if (withMenu) kids.push(el('button.btn', { text: '☰ Menu', on: { click: () => this.showMenu() } }));
+    this.matchPanel.appendChild(el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, kids));
+    this.matchPanel.removeAttribute('hidden');
+    this.matchPanel.style.display = 'grid';
+  }
+
+  _hideOnlineNotice() {
+    if (!this.matchPanel) return;
+    this.matchPanel.setAttribute('hidden', 'hidden');
+    this.matchPanel.style.display = 'none';
   }
 
   _showOnlineMatchOver(m) {

@@ -4,7 +4,7 @@ import { Player } from '../src/models/Player.js';
 import { ControllerType, Difficulty } from '../src/models/enums.js';
 import { colorForSlot } from '../src/rendering/Palette.js';
 import { C } from '../src/constants/GameConstants.js';
-import { MSG, serializeMaze, buildSnapshot } from '../src/net/protocol.js';
+import { MSG, serializeMaze, buildSnapshot, genToken } from '../src/net/protocol.js';
 import { NetController } from './NetController.js';
 import { AIController } from '../src/ai/AIController.js';
 import { log } from '../src/core/log/Logger.js';
@@ -16,6 +16,7 @@ const SNAP_HZ = 20; // authoritative snapshot rate
 const SNAP_INTERVAL = 1 / SNAP_HZ;
 const POINTS_TO_WIN = 5;
 const MAX_PENDING_EVENTS = 120; // safety cap on the per-snapshot event batch
+const RECONNECT_GRACE_MS = 30000; // keep a dropped player's slot reserved this long
 
 // Gameplay events forwarded to clients so audio + particle effects + screen
 // shake fire online (the sim runs server-side, so the client can't emit these
@@ -67,8 +68,22 @@ export class Room {
     this._matchOverSent = false;
     this._pendingEvents = [];
 
-    this.bus.on('round:created', () => this._broadcastRoundStart());
+    this.bus.on('round:created', () => {
+      this._aiControlDisconnected(); // reserved-but-absent players play as bots this round
+      this._broadcastRoundStart();
+    });
     this._wireEvents();
+  }
+
+  /** Drive any reserved-but-disconnected members' tanks with the AI for this round. */
+  _aiControlDisconnected() {
+    if (!this.match || !this.match.round) return;
+    for (const m of this.members.values()) {
+      if (m.connected === false) {
+        const player = this.match.players.find((p) => p.slot === m.slot);
+        if (player) this.match.round.setController(m.slot, new AIController(player));
+      }
+    }
   }
 
   /**
@@ -103,20 +118,67 @@ export class Room {
     return -1;
   }
 
-  /** @returns {number} assigned slot, or -1 if the room is full / already started */
+  /** @returns {{slot:number, token:string}|null} assignment, or null if no room */
   addMember(id, ws, name) {
-    if (this.started || this.isFull) return -1;
+    if (this.started || this.isFull) return null;
     const slot = this._freeSlot();
-    if (slot < 0) return -1;
-    this.members.set(id, { ws, id, name: name || `Player ${slot + 1}`, slot });
+    if (slot < 0) return null;
+    const token = genToken();
+    this.members.set(id, { ws, id, name: name || `Player ${slot + 1}`, slot, token, connected: true, graceTimer: null });
     if (!this.hostId) this.hostId = id;
     this._broadcastRoomState();
-    return slot;
+    return { slot, token };
+  }
+
+  /** Socket dropped: reserve the slot for a grace period, hand the tank to AI. */
+  handleDisconnect(id) {
+    const m = this.members.get(id);
+    if (!m) return;
+    m.connected = false;
+    m.ws = null;
+    this.controllers.get(m.slot)?.neutral();
+    if (this.started && this.match && this.match.round) {
+      const player = this.match.players.find((p) => p.slot === m.slot);
+      if (player) this.match.round.setController(m.slot, new AIController(player));
+    }
+    // Host duties pass to a connected member while they're away.
+    if (this.hostId === id) this.hostId = this._firstConnectedId();
+    rlog.info('disconnect (slot reserved)', { code: this.code, slot: m.slot, name: m.name, graceMs: RECONNECT_GRACE_MS });
+    m.graceTimer = setTimeout(() => this.removeMember(id), RECONNECT_GRACE_MS);
+    if (!this._firstConnectedId()) {
+      // Nobody connected; if the grace lapses for all, the room empties itself.
+      this._broadcastRoomState();
+    } else {
+      this._broadcastRoomState();
+    }
+  }
+
+  /** Reconnect a dropped member by token onto their reserved slot. */
+  rejoin(newId, ws, token) {
+    const m = [...this.members.values()].find((x) => x.token === token && !x.connected);
+    if (!m) return null;
+    if (m.graceTimer) clearTimeout(m.graceTimer);
+    this.members.delete(m.id);
+    m.id = newId;
+    m.ws = ws;
+    m.connected = true;
+    m.graceTimer = null;
+    this.members.set(newId, m);
+    if (!this._firstConnectedId() || this.hostId == null) this.hostId = newId;
+    // Restore human control of their slot (swap the AI stand-in back out).
+    if (this.started && this.match && this.match.round) {
+      const ctrl = this.controllers.get(m.slot);
+      if (ctrl) this.match.round.setController(m.slot, ctrl);
+    }
+    rlog.info('reconnect', { code: this.code, slot: m.slot, name: m.name, started: this.started });
+    this._broadcastRoomState();
+    return { slot: m.slot, token: m.token, isHost: this.hostId === newId };
   }
 
   removeMember(id) {
     const m = this.members.get(id);
     if (!m) return;
+    if (m.graceTimer) clearTimeout(m.graceTimer);
     this.members.delete(id);
     this.controllers.delete(m.slot);
     if (this.started && this.match && this.match.round) {
@@ -129,7 +191,7 @@ export class Room {
       }
       this._applyRosterToMatch();
     }
-    if (this.hostId === id) this.hostId = this.members.keys().next().value || null;
+    if (this.hostId === id) this.hostId = this._firstConnectedId();
     if (this.members.size === 0) {
       this.stop();
       this._onEmpty?.();
@@ -138,10 +200,15 @@ export class Room {
     }
   }
 
+  _firstConnectedId() {
+    for (const m of this.members.values()) if (m.connected) return m.id;
+    return null;
+  }
+
   roster() {
     return [...this.members.values()]
       .sort((a, b) => a.slot - b.slot)
-      .map((m) => ({ id: m.id, name: m.name, slot: m.slot, isHost: m.id === this.hostId }));
+      .map((m) => ({ id: m.id, name: m.name, slot: m.slot, isHost: m.id === this.hostId, connected: m.connected !== false }));
   }
 
   /** Build the player list + human controller map from members + fillBots. */

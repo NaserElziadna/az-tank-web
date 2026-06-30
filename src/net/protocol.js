@@ -15,6 +15,7 @@ export const MSG = Object.freeze({
   // client → server
   CREATE_ROOM: 'createRoom',
   JOIN_ROOM: 'joinRoom',
+  REJOIN: 'rejoin', // reconnect to a reserved slot after a dropped socket
   LEAVE_ROOM: 'leaveRoom',
   START_MATCH: 'startMatch',
   SET_FILL_BOTS: 'setFillBots', // host toggles AI filling empty seats (lobby + in-game)
@@ -24,6 +25,7 @@ export const MSG = Object.freeze({
   // server → client
   ROOM_STATE: 'roomState', // lobby roster changed
   JOIN_RESULT: 'joinResult', // ok/err + your slot + room code
+  REJOIN_RESULT: 'rejoinResult', // ok/err for a reconnect attempt (NetClient-internal)
   ROUND_START: 'roundStart', // new maze (tiles) + player meta
   SNAPSHOT: 'snapshot', // per-frame authoritative state
   EVENT: 'event', // discrete one-shot (kill, pickup, …) — Phase 2
@@ -38,6 +40,13 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no O/0/I/1 ambiguity
 export function genRoomCode(rand = Math.random) {
   let s = '';
   for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)];
+  return s;
+}
+
+/** Opaque per-member session token used to reclaim a slot on reconnect. */
+export function genToken(rand = Math.random) {
+  let s = '';
+  for (let i = 0; i < 16; i++) s += Math.floor(rand() * 36).toString(36);
   return s;
 }
 
