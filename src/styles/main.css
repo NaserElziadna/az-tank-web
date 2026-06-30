@@ -617,3 +617,106 @@ body {
   transform: scale(0.9);
   filter: brightness(1.2);
 }
+
+/* ── Rotate-to-landscape hint (small portrait phones, in-game only) ────────── */
+.rotate-hint {
+  display: none;
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  .game .rotate-hint {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(10, 12, 16, 0.92);
+    color: var(--text);
+    text-align: center;
+    padding: 24px;
+    pointer-events: auto;
+  }
+  .rotate-hint__icon {
+    font-size: 60px;
+    animation: rotate-nudge 1.6s ease-in-out infinite;
+  }
+  .rotate-hint__text {
+    font-weight: 700;
+    font-size: 18px;
+    max-width: 280px;
+    line-height: 1.5;
+  }
+}
+@keyframes rotate-nudge {
+  0%, 100% { transform: rotate(-12deg); }
+  50% { transform: rotate(78deg); }
+}
+
+/* ── Responsive: small / short viewports ──────────────────────────────────── */
+@media (max-width: 760px), (max-height: 560px) {
+  /* Let non-game screens scroll instead of clipping tall content. */
+  .screen:not(.game) {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 22px 14px calc(22px + env(safe-area-inset-bottom, 0px));
+  }
+  .menu {
+    gap: 16px;
+  }
+  .menu__tagline {
+    font-size: 14px;
+  }
+}
+@media (max-width: 560px) {
+  .online {
+    width: 94vw;
+    gap: 12px;
+  }
+  .online__seats {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .online__option {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .online__option-label {
+    min-width: 0;
+    text-align: center;
+  }
+  .online__row {
+    flex-wrap: wrap;
+  }
+  .menu__actions .btn,
+  .menu__actions .btn--lethal,
+  .menu__actions .btn--online {
+    width: min(340px, 88vw);
+  }
+  /* Comfortable tap targets. */
+  .btn {
+    padding: 16px 28px;
+  }
+  .online__chip {
+    padding: 10px 18px;
+  }
+}
+/* In-game topbar stays compact on phones. */
+@media (max-width: 560px) {
+  .topbar {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+  }
+  .topbar__bots {
+    font-size: 12px;
+    padding: 6px 10px;
+    margin-right: 6px;
+  }
+  .topbar__ping {
+    font-size: 12px;
+    min-width: 44px;
+  }
+}

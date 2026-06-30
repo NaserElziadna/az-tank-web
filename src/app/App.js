@@ -115,7 +115,7 @@ export class App {
       this.botToggleEl,
       this.pingEl,
     ]);
-    const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar]);
+    const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar, this._rotateHint()]);
     // Tear down the lobby screen FIRST (while onlineNet is still unset, so its
     // teardown can't close the connection we're about to use), THEN claim net.
     this._setScreen(root);
@@ -176,6 +176,11 @@ export class App {
     this.matchPanel.style.display = 'grid';
   }
 
+  /** Portrait-phone nudge shown over the game (CSS decides when it's visible). */
+  _rotateHint() {
+    return el('div.rotate-hint', {}, [el('div.rotate-hint__icon', { text: '📱' }), el('div.rotate-hint__text', { text: 'Rotate your device to landscape for the best view' })]);
+  }
+
   _hideOnlineNotice() {
     if (!this.matchPanel) return;
     this.matchPanel.setAttribute('hidden', 'hidden');
@@ -227,7 +232,7 @@ export class App {
       el('button.btn--ghost', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
       el('span'),
     ]);
-    const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar]);
+    const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar, this._rotateHint()]);
     this._setScreen(root);
 
     // Phaser reads the parent size on construction — the screen is now laid out.
