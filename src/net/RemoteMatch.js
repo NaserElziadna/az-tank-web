@@ -135,7 +135,18 @@ export class RemoteMatch {
       const x = lerp(pa.x, pb.x, alpha);
       const y = lerp(pa.y, pb.y, alpha);
       const rot = pa.rot + shortAngle(pb.rot - pa.rot) * alpha;
-      return { id: pb.id, position: { x, y }, prevPosition: { x, y }, rotation: rot, prevRotation: rot, kind: pb.kind, colorKey: pb.color };
+      return {
+        id: pb.id,
+        position: { x, y },
+        prevPosition: { x, y },
+        rotation: rot,
+        prevRotation: rot,
+        kind: pb.kind,
+        colorKey: pb.color,
+        radius: pb.r,
+        velocity: { x: pb.vx || 0, y: pb.vy || 0 },
+        activated: pb.act,
+      };
     });
   }
 

@@ -25,7 +25,10 @@ export class ProjectileRenderer {
         ctx.arc(x, y, Math.max(p.radius, 0.12), 0, Math.PI * 2);
         ctx.fill();
       } else {
-        const r = Math.max(p.radius, p.kind === 'shotgun' || p.kind === 'gatling' ? 0.13 : 0.24);
+        // Render a touch larger than the collider so shots read clearly (and
+        // guard against a missing radius, which would otherwise be NaN).
+        const base = Math.max(p.radius || 0.3, p.kind === 'shotgun' || p.kind === 'gatling' ? 0.18 : 0.3);
+        const r = base * 1.25;
         // Coloured motion streak behind fast main bullets (sense of speed).
         if ((p.kind === 'bullet' || p.kind === 'double') && p.velocity) {
           const sp = Math.hypot(p.velocity.x, p.velocity.y);

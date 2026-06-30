@@ -92,7 +92,7 @@ export function buildSnapshot(match) {
       }))
     : [];
   const proj = round
-    ? round.projectiles.filter((p) => !p.dead).map((p) => ({ id: p.id, x: round_num(p.position.x), y: round_num(p.position.y), rot: round_num(p.rotation), kind: p.kind, color: p.colorKey }))
+    ? round.projectiles.filter((p) => !p.dead).map((p) => ({ id: p.id, x: round_num(p.position.x), y: round_num(p.position.y), rot: round_num(p.rotation), kind: p.kind, color: p.colorKey, r: round_num(p.radius), vx: round_num(p.velocity.x), vy: round_num(p.velocity.y), act: !!p.activated }))
     : [];
   const mines = round
     ? round.mines.filter((m) => !m.dead).map((m) => ({ id: m.id, x: round_num(m.position.x), y: round_num(m.position.y), state: m.state, color: m.colorKey }))
