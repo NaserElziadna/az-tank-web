@@ -98,8 +98,8 @@ export class App {
     this.onlineNet = net;
     this._refreshOnlineTopbar();
 
-    alog.info('startOnlineGame', { round: firstRound?.round, isHost: this.onlineIsHost });
-    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound, bus: this.bus });
+    alog.info('startOnlineGame', { round: firstRound?.round, isHost: this.onlineIsHost, slot: meta.localSlot });
+    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound, bus: this.bus, localSlot: meta.localSlot });
 
     // Keep host/fill state current; re-show the game on a rematch round.
     net.on('roomState', (s) => {

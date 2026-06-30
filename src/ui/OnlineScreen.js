@@ -149,7 +149,7 @@ export class OnlineScreen {
       if (this._launched) return;
       this._launched = true;
       // Hand the first round + host/fill state to the game so it inits deterministically.
-      this.onLaunch(this.net, m, { isHost: this.isHost, fillBots: this.fillBots });
+      this.onLaunch(this.net, m, { isHost: this.isHost, fillBots: this.fillBots, localSlot: this.localSlot });
     });
     this.net.on('netClose', () => {
       if (!this._launched) this._renderEntry('Disconnected from the server.');

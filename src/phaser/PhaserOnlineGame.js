@@ -7,12 +7,16 @@ import { TouchControls, isTouchDevice } from './TouchControls.js';
 import { AssetStore } from './AssetStore.js';
 import { TankIconCompositor } from './TankIconCompositor.js';
 import { RemoteMatch } from '../net/RemoteMatch.js';
+import { C } from '../constants/GameConstants.js';
+import { RoundPhase } from '../models/enums.js';
 import { log } from '../core/log/Logger.js';
 
 const glog = log.scope('game');
 const ilog = log.scope('input');
 const INPUT_HZ = 30;
 const INPUT_INTERVAL = 1 / INPUT_HZ;
+const SNAP_CORRECTION = 0.3; // how hard each snapshot nudges the prediction back
+const SNAP_THRESHOLD = 1.5; // metres of error past which we hard-snap (death/respawn)
 
 /**
  * Online counterpart to {@link PhaserGame}. There is no local simulation: a
@@ -26,10 +30,12 @@ export class PhaserOnlineGame {
    * @param {HTMLElement} parentEl
    * @param {{net:import('../net/NetClient.js').NetClient, version?:string}} opts
    */
-  constructor(parentEl, { net, version = 'v2.0', initialRound = null, bus = null }) {
+  constructor(parentEl, { net, version = 'v2.0', initialRound = null, bus = null, localSlot = null }) {
     this.net = net;
     this.version = version;
     this.parentEl = parentEl;
+    this.localSlot = localSlot;
+    this._pred = null; // client-side prediction of our own tank {x, y, rot}
     this.remote = new RemoteMatch();
     // Use the app's audio/effects bus so forwarded server events drive sound,
     // particles and screen shake. Falls back to a local bus if none provided.
@@ -54,6 +60,7 @@ export class PhaserOnlineGame {
       net.on('snapshot', (m) => {
         this.remote.pushSnapshot(m);
         this._replayEvents(m.ev);
+        this._reconcile(m);
       }),
     ];
 
@@ -106,6 +113,7 @@ export class PhaserOnlineGame {
       this._lastInput = intent;
       this.net.sendInput(intent);
     }
+    this._predict(intent, dt);
     if (this.renderer) this.renderer.update(dt);
 
     // Periodic telemetry: one rich line every 5s (FPS, rtt, interp buffer, who's
@@ -145,6 +153,62 @@ export class PhaserOnlineGame {
     for (const e of events) this.bus.emit(e.e, e);
   }
 
+  /** Latest authoritative state of our own tank (from the newest snapshot). */
+  _authLocalTank() {
+    if (this.localSlot == null) return null;
+    const last = this.remote._buf[this.remote._buf.length - 1];
+    return last ? last.snap.tanks.find((t) => t.slot === this.localSlot) : null;
+  }
+
+  /**
+   * Advance the local tank from our own input immediately (no waiting for the
+   * server round-trip), using the server's exact movement constants, then clamp
+   * against maze walls so we don't visibly tunnel through them before the next
+   * snapshot corrects us. Server stays authoritative — this is cosmetic latency
+   * hiding for our own tank only.
+   */
+  _predict(intent, dt) {
+    const auth = this._authLocalTank();
+    if (!auth || !auth.alive) {
+      this._pred = null;
+      return;
+    }
+    // Only predict during live play; otherwise sit exactly on the server state.
+    if (this.remote.phase !== RoundPhase.PLAYING) {
+      this._pred = { x: auth.x, y: auth.y, rot: auth.rot };
+      return;
+    }
+    if (!this._pred) this._pred = { x: auth.x, y: auth.y, rot: auth.rot };
+
+    this._pred.rot += intent.turn * C.TANK.ROTATION_SPEED * dt;
+    if (intent.drive !== 0) {
+      const speed = intent.drive > 0 ? C.TANK.FORWARD_SPEED : -C.TANK.BACK_SPEED;
+      this._pred.x += Math.cos(this._pred.rot) * speed * dt;
+      this._pred.y += Math.sin(this._pred.rot) * speed * dt;
+      const maze = this.remote.round && this.remote.round.maze;
+      if (maze) clampToWalls(this._pred, C.TANK.COLLISION_RADIUS, maze);
+    }
+  }
+
+  /** Nudge the prediction back toward the authoritative snapshot (or snap on a big jump). */
+  _reconcile(snap) {
+    if (this.localSlot == null || !this._pred) return;
+    const auth = snap.tanks.find((t) => t.slot === this.localSlot);
+    if (!auth || !auth.alive) {
+      this._pred = null;
+      return;
+    }
+    const ex = auth.x - this._pred.x;
+    const ey = auth.y - this._pred.y;
+    if (Math.hypot(ex, ey) > SNAP_THRESHOLD) {
+      this._pred = { x: auth.x, y: auth.y, rot: auth.rot }; // death/respawn/round change
+      return;
+    }
+    this._pred.x += ex * SNAP_CORRECTION;
+    this._pred.y += ey * SNAP_CORRECTION;
+    this._pred.rot += shortAngle(auth.rot - this._pred.rot) * SNAP_CORRECTION;
+  }
+
   _readLocalInput() {
     const k = this.controls.read();
     const abilityHeld = this.controls.ability ? this.controls.ability.isDown : false;
@@ -170,6 +234,16 @@ export class PhaserOnlineGame {
   _render() {
     if (!this.renderer) return;
     this.remote.interpolate();
+    // Override our own tank with the predicted pose so our input feels instant.
+    if (this._pred && this.remote.round) {
+      const me = this.remote.round.tanks.find((t) => t.slot === this.localSlot && t.alive);
+      if (me) {
+        me.position = { x: this._pred.x, y: this._pred.y };
+        me.prevPosition = me.position;
+        me.rotation = this._pred.rot;
+        me.prevRotation = this._pred.rot;
+      }
+    }
     if (this.remote.sim) this.renderer.render(this.remote, 0);
   }
 
@@ -188,4 +262,40 @@ export class PhaserOnlineGame {
     this.game = null;
     this.renderer = null;
   }
+}
+
+/** Push a circle out of any maze wall it overlaps, and keep it inside the arena. */
+function clampToWalls(p, r, maze) {
+  for (const w of maze.walls) {
+    const cx = Math.max(w.minX, Math.min(p.x, w.maxX));
+    const cy = Math.max(w.minY, Math.min(p.y, w.maxY));
+    let dx = p.x - cx;
+    let dy = p.y - cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= r * r) continue;
+    if (d2 > 1e-6) {
+      const d = Math.sqrt(d2);
+      p.x = cx + (dx / d) * r;
+      p.y = cy + (dy / d) * r;
+    } else {
+      // Center inside the rect: eject along the shallowest axis.
+      const left = p.x - w.minX;
+      const right = w.maxX - p.x;
+      const top = p.y - w.minY;
+      const bottom = w.maxY - p.y;
+      const m = Math.min(left, right, top, bottom);
+      if (m === left) p.x = w.minX - r;
+      else if (m === right) p.x = w.maxX + r;
+      else if (m === top) p.y = w.minY - r;
+      else p.y = w.maxY + r;
+    }
+  }
+  p.x = Math.max(r, Math.min(p.x, maze.worldWidth - r));
+  p.y = Math.max(r, Math.min(p.y, maze.worldHeight - r));
+}
+
+function shortAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
 }
