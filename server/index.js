@@ -106,8 +106,14 @@ function handle(ws, conn, msg) {
       break;
     }
     case MSG.START_MATCH: {
-      const ok = conn.room?.start(conn.id);
-      slog.info('startMatch', { id: conn.id, room: conn.room?.code || null, ok: !!ok });
+      // Same message starts the first match and triggers a rematch after one ends.
+      const room = conn.room;
+      const ok = room ? room.start(conn.id) || room.restart(conn.id) : false;
+      slog.info('startMatch', { id: conn.id, room: room?.code || null, ok });
+      break;
+    }
+    case MSG.SET_FILL_BOTS: {
+      conn.room?.setFillBots(!!msg.on, conn.id);
       break;
     }
     case MSG.INPUT: {

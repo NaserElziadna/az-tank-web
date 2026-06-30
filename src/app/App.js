@@ -42,6 +42,10 @@ export class App {
   }
 
   _teardownGame() {
+    if (this._pingTimer) {
+      clearInterval(this._pingTimer);
+      this._pingTimer = null;
+    }
     if (this.phaser) {
       this.phaser.destroy();
       this.phaser = null;
@@ -62,38 +66,85 @@ export class App {
 
   /** Online lobby: create/join a room, then launch the networked game on match start. */
   showOnline() {
-    const screen = new OnlineScreen({ onBack: () => this.showMenu(), onLaunch: (net, firstRound) => this.startOnlineGame(net, firstRound) });
+    const screen = new OnlineScreen({ onBack: () => this.showMenu(), onLaunch: (net, firstRound, meta) => this.startOnlineGame(net, firstRound, meta) });
     this._setScreen(screen.root);
     this.onlineScreen = screen; // set AFTER _setScreen so it isn't disposed immediately
   }
 
-  /** @param {import('../net/NetClient.js').NetClient} net @param {object} firstRound the roundStart that triggered launch */
-  startOnlineGame(net, firstRound) {
+  /**
+   * @param {import('../net/NetClient.js').NetClient} net
+   * @param {object} firstRound the roundStart that triggered launch
+   * @param {{isHost:boolean, fillBots:boolean}} [meta]
+   */
+  startOnlineGame(net, firstRound, meta = {}) {
+    this.onlineIsHost = !!meta.isHost;
+    this.onlineFillBots = meta.fillBots !== false;
+
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
-    const topbar = el('div.topbar', {}, [el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.showMenu() } }), el('span')]);
+    this.pingEl = el('span.topbar__ping', { text: '' });
+    this.botToggleEl = el('button.topbar__bots', { text: '', on: { click: () => net.setFillBots(!this.onlineFillBots) } });
+    const topbar = el('div.topbar', {}, [
+      el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.showMenu() } }),
+      el('span.topbar__spacer'),
+      this.botToggleEl,
+      this.pingEl,
+    ]);
     const root = el('div.screen.game', {}, [el('div.game__stage-wrap', { style: { position: 'absolute', inset: '0' } }, [this.stage]), this.matchPanel, topbar]);
     // Tear down the lobby screen FIRST (while onlineNet is still unset, so its
     // teardown can't close the connection we're about to use), THEN claim net.
     this._setScreen(root);
     this.onlineScreen = null; // handed off; its tank is now server-driven
     this.onlineNet = net;
+    this._refreshOnlineTopbar();
 
-    alog.info('startOnlineGame', { round: firstRound?.round });
-    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound });
+    alog.info('startOnlineGame', { round: firstRound?.round, isHost: this.onlineIsHost });
+    this.online = new PhaserOnlineGame(this.stage, { net, version: VERSION, initialRound: firstRound, bus: this.bus });
+
+    // Keep host/fill state current; re-show the game on a rematch round.
+    net.on('roomState', (s) => {
+      if (typeof s.fillBots === 'boolean') this.onlineFillBots = s.fillBots;
+      this._refreshOnlineTopbar();
+    });
+    net.on('roundStart', () => {
+      if (this.matchPanel) {
+        this.matchPanel.setAttribute('hidden', 'hidden');
+        this.matchPanel.style.display = 'none';
+      }
+    });
     net.on('matchOver', (m) => {
-      alog.info('matchOver', { winnerSlot: m?.winnerSlot });
+      alog.info('matchOver', { winnerSlot: m?.winnerSlot, winner: m?.winnerName });
       this._showOnlineMatchOver(m);
     });
+
+    // Live ping readout in the topbar.
+    if (this._pingTimer) clearInterval(this._pingTimer);
+    this._pingTimer = setInterval(() => this._refreshOnlineTopbar(), 1000);
+  }
+
+  _refreshOnlineTopbar() {
+    if (this.botToggleEl) {
+      this.botToggleEl.textContent = `🤖 Bots ${this.onlineFillBots ? 'ON' : 'OFF'}`;
+      this.botToggleEl.classList.toggle('topbar__bots--off', !this.onlineFillBots);
+      this.botToggleEl.style.display = this.onlineIsHost ? '' : 'none';
+    }
+    if (this.pingEl) {
+      const rtt = this.onlineNet?.rtt;
+      this.pingEl.textContent = rtt != null ? `${Math.round(rtt)} ms` : '…';
+    }
   }
 
   _showOnlineMatchOver(m) {
-    const name = m && m.winnerSlot != null ? `Player ${m.winnerSlot + 1}` : null;
+    const name = m && (m.winnerName || (m.winnerSlot != null ? `Player ${m.winnerSlot + 1}` : null));
     clear(this.matchPanel);
+    const actions = [];
+    if (this.onlineIsHost) actions.push(el('button.btn', { text: '↻ Play Again', on: { click: () => this.onlineNet?.startMatch() } }));
+    actions.push(el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.showMenu() } }));
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
         el('div.overlay__big', { text: name ? `${name} wins the match!` : 'Match over' }),
-        el('div', { style: { display: 'flex', gap: '14px' } }, [el('button.btn', { text: '☰ Menu', on: { click: () => this.showMenu() } })]),
+        this.onlineIsHost ? null : el('p', { text: 'Waiting for the host to start a rematch…', style: { color: 'var(--text-dim)' } }),
+        el('div', { style: { display: 'flex', gap: '14px' } }, actions),
       ]),
     );
     this.matchPanel.removeAttribute('hidden');

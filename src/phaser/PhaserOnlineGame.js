@@ -26,12 +26,14 @@ export class PhaserOnlineGame {
    * @param {HTMLElement} parentEl
    * @param {{net:import('../net/NetClient.js').NetClient, version?:string}} opts
    */
-  constructor(parentEl, { net, version = 'v2.0', initialRound = null }) {
+  constructor(parentEl, { net, version = 'v2.0', initialRound = null, bus = null }) {
     this.net = net;
     this.version = version;
     this.parentEl = parentEl;
     this.remote = new RemoteMatch();
-    this.bus = new EventBus(); // local effects bus (shake etc.); server is the source of truth
+    // Use the app's audio/effects bus so forwarded server events drive sound,
+    // particles and screen shake. Falls back to a local bus if none provided.
+    this.bus = bus || new EventBus();
     this.controls = null;
     this.touch = null;
     this.renderer = null;
@@ -49,7 +51,10 @@ export class PhaserOnlineGame {
     this._starveWarned = false;
     this._unsub = [
       net.on('roundStart', (m) => this.remote.onRoundStart(m)),
-      net.on('snapshot', (m) => this.remote.pushSnapshot(m)),
+      net.on('snapshot', (m) => {
+        this.remote.pushSnapshot(m);
+        this._replayEvents(m.ev);
+      }),
     ];
 
     const w = parentEl.clientWidth || 960;
@@ -132,6 +137,12 @@ export class PhaserOnlineGame {
       this._starveWarned = true;
       glog.warn('snapshot starvation >2.5s', { netOpen: this.net.ws?.readyState, rtt: this.net.rtt, round: this.remote.roundNumber });
     }
+  }
+
+  /** Replay the server's gameplay-event batch on the bus → sound + effects + shake. */
+  _replayEvents(events) {
+    if (!events || !events.length) return;
+    for (const e of events) this.bus.emit(e.e, e);
   }
 
   _readLocalInput() {

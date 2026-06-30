@@ -250,6 +250,58 @@ body {
   font-weight: 700;
   font-size: 17px;
 }
+.online__toggle {
+  appearance: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  background: #2c3946;
+  border: 2px solid #3d7bd6;
+  border-radius: 999px;
+  padding: 10px 22px;
+  transition: filter 0.12s ease;
+}
+.online__toggle:hover {
+  filter: brightness(1.1);
+}
+.online__toggle--off {
+  border-color: #5a606b;
+  background: #2a2e36;
+  color: var(--text-dim);
+}
+.online__hint {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.topbar__spacer {
+  flex: 1;
+}
+.topbar__bots {
+  appearance: none;
+  cursor: pointer;
+  pointer-events: auto; /* .topbar is pointer-events:none; opt back in */
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+  background: #2d7bd6;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  margin-right: 10px;
+}
+.topbar__bots--off {
+  background: #4a4f59;
+}
+.topbar__ping {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
+}
 
 /* ── Setup screen ─────────────────────────────────────────────────────────── */
 .setup {

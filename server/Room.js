@@ -6,6 +6,7 @@ import { colorForSlot } from '../src/rendering/Palette.js';
 import { C } from '../src/constants/GameConstants.js';
 import { MSG, serializeMaze, buildSnapshot } from '../src/net/protocol.js';
 import { NetController } from './NetController.js';
+import { AIController } from '../src/ai/AIController.js';
 import { log } from '../src/core/log/Logger.js';
 
 const rlog = log.scope('room');
@@ -14,12 +15,33 @@ const MAX_SLOTS = 4; // classic 2–4 arena; humans fill low slots, bots fill th
 const SNAP_HZ = 20; // authoritative snapshot rate
 const SNAP_INTERVAL = 1 / SNAP_HZ;
 const POINTS_TO_WIN = 5;
+const MAX_PENDING_EVENTS = 120; // safety cap on the per-snapshot event batch
+
+// Gameplay events forwarded to clients so audio + particle effects + screen
+// shake fire online (the sim runs server-side, so the client can't emit these
+// itself). Payloads are spread through verbatim (they carry x/y where relevant).
+const FORWARDED_EVENTS = [
+  'weapon:fire',
+  'weapon:flash',
+  'ability:activate',
+  'projectile:bounce',
+  'tank:bump',
+  'tank:damaged',
+  'tank:destroyed',
+  'mine:detonated',
+  'mine:tripped',
+  'collectible:picked',
+  'round:countdown:tick',
+  'round:start',
+];
 
 /**
  * One online match room. Holds the connected members, the single authoritative
  * {@link B2Match}, and the fixed-timestep server loop that steps the sim and
- * broadcasts snapshots. Empty slots are filled with AI bots so the arena is
- * always full and there's always something to fight.
+ * broadcasts snapshots (with a piggy-backed gameplay-event batch). The host can
+ * toggle whether empty seats are filled with AI bots, in the lobby AND mid-match
+ * (it takes effect at the next round). A human who leaves mid-match is handed to
+ * the AI so their tank keeps fighting instead of freezing.
  */
 export class Room {
   /** @param {string} code @param {() => void} onEmpty called when the last member leaves */
@@ -30,6 +52,7 @@ export class Room {
     this.members = new Map();
     this.hostId = null;
     this.started = false;
+    this.fillBots = true; // host-controlled; default keeps the arena full
     this.bus = new EventBus();
     this.match = null;
     /** @type {Map<number, NetController>} */
@@ -38,24 +61,30 @@ export class Room {
     this._acc = 0;
     this._snapAcc = 0;
     this._last = 0;
+    this._snapCount = 0;
     this._matchOverSent = false;
+    this._pendingEvents = [];
 
     this.bus.on('round:created', () => this._broadcastRoundStart());
-    this._wireEventLogs();
+    this._wireEvents();
   }
 
   /**
-   * Mirror the authoritative sim's gameplay events into the log. Rare events
-   * (kills, pickups, abilities, round results) log in full; hot ones (fire,
-   * damage) are sampled so the picture is rich without flooding the file.
+   * Subscribe to the sim's event bus once: forward gameplay events to clients
+   * (for audio/effects) and mirror the meaningful ones into the log (rare events
+   * in full, hot ones sampled, so the log is rich without flooding).
    */
-  _wireEventLogs() {
+  _wireEvents() {
     const code = this.code;
+    for (const name of FORWARDED_EVENTS) {
+      this.bus.on(name, (payload) => {
+        if (this._pendingEvents.length < MAX_PENDING_EVENTS) this._pendingEvents.push({ e: name, ...payload });
+      });
+    }
     this.bus.on('tank:destroyed', (e) => rlog.info('kill', { code, slot: e.slot, by: e.killerSlot ?? null }));
     this.bus.on('round:decided', (e) => rlog.info('round decided', { code, winnerSlot: e.winnerSlot }));
     this.bus.on('collectible:picked', (e) => rlog.info('pickup', { code, slot: e.slot, type: e.type }));
     this.bus.on('ability:activate', (e) => rlog.info('ability', { code, slot: e.slot, kind: e.kind }));
-    this.bus.on('mine:detonated', () => rlog.debug('mine detonated', { code }));
     this.bus.on('weapon:fire', (e) => rlog.sampled(`fire-${code}`, 15, 'debug', 'weapon fire', { code, weapon: e.weapon }));
     this.bus.on('tank:damaged', (e) => rlog.sampled(`dmg-${code}`, 6, 'debug', 'tank damaged', { code, slot: e.slot ?? e.targetSlot }));
   }
@@ -87,8 +116,17 @@ export class Room {
     const m = this.members.get(id);
     if (!m) return;
     this.members.delete(id);
-    // If the match is live, neutralise their tank's input (it lingers as a sitting duck).
-    if (this.started) this.controllers.get(m.slot)?.neutral();
+    this.controllers.delete(m.slot);
+    if (this.started && this.match && this.match.round) {
+      // Hand the abandoned tank to the AI so it keeps fighting this round; the
+      // next round's roster (rebuilt below) decides the seat per fillBots.
+      const player = this.match.players.find((p) => p.slot === m.slot);
+      if (player) {
+        this.match.round.setController(m.slot, new AIController(player));
+        rlog.info('leaver → bot', { code: this.code, slot: m.slot, name: m.name });
+      }
+      this._applyRosterToMatch();
+    }
     if (this.hostId === id) this.hostId = this.members.keys().next().value || null;
     if (this.members.size === 0) {
       this.stop();
@@ -104,25 +142,60 @@ export class Room {
       .map((m) => ({ id: m.id, name: m.name, slot: m.slot, isHost: m.id === this.hostId }));
   }
 
-  // ── match lifecycle ──────────────────────────────────────────────────────
-  start(byId) {
-    if (this.started || byId !== this.hostId) return false;
-    this.started = true;
-
+  /** Build the player list + human controller map from members + fillBots. */
+  _buildRoster() {
     const players = [];
     const humanControllers = new Map();
-    const humanSlots = new Set([...this.members.values()].map((m) => m.slot));
     for (let slot = 0; slot < MAX_SLOTS; slot++) {
-      const human = [...this.members.values()].find((m) => m.slot === slot);
+      const human = [...this.members.values()].find((mm) => mm.slot === slot);
       if (human) {
-        const ctrl = new NetController();
-        this.controllers.set(slot, ctrl);
+        let ctrl = this.controllers.get(slot);
+        if (!ctrl) {
+          ctrl = new NetController();
+          this.controllers.set(slot, ctrl);
+        }
         humanControllers.set(slot, ctrl);
         players.push(new Player({ slot, name: human.name, controller: ControllerType.HUMAN, color: colorForSlot(slot) }));
-      } else {
+      } else if (this.fillBots) {
         players.push(new Player({ slot, name: `Bot ${slot + 1}`, controller: ControllerType.AI, color: colorForSlot(slot), difficulty: Difficulty.HARD }));
       }
     }
+    return { players, humanControllers };
+  }
+
+  /** Re-roster a live match (preserving scores); takes effect next round. */
+  _applyRosterToMatch() {
+    if (!this.match) return;
+    const { players, humanControllers } = this._buildRoster();
+    for (const p of players) p.score = this.match.score ? this.match.score.get(p.slot) : 0;
+    this.match.players = players;
+    this.match._humanControllers = humanControllers;
+    if (this.match.score) for (const p of players) this.match.score.register(p.slot);
+  }
+
+  // ── match lifecycle ──────────────────────────────────────────────────────
+  setFillBots(on, byId) {
+    if (byId !== this.hostId) return;
+    this.fillBots = !!on;
+    rlog.info('fillBots toggled', { code: this.code, on: this.fillBots, started: this.started });
+    if (this.started) this._applyRosterToMatch(); // applies next round
+    this._broadcastRoomState();
+  }
+
+  start(byId) {
+    if (this.started || byId !== this.hostId) return false;
+    return this._beginMatch();
+  }
+
+  /** Host rematch after a match ends — same room, same members. */
+  restart(byId) {
+    if (byId !== this.hostId || !this._matchOverSent) return false;
+    return this._beginMatch();
+  }
+
+  _beginMatch() {
+    this.started = true;
+    const { players, humanControllers } = this._buildRoster();
 
     this.match = new B2Match(this.bus);
     this.match.configure(players, { pointsToWin: POINTS_TO_WIN, humanControllers });
@@ -132,9 +205,11 @@ export class Room {
     this._acc = 0;
     this._snapAcc = 0;
     this._snapCount = 0;
+    this._pendingEvents.length = 0;
     this._last = Date.now();
+    if (this._loop) clearInterval(this._loop);
     this._loop = setInterval(() => this._tick(), Math.round(1000 * C.STEP));
-    rlog.info('match started', { code: this.code, players: players.map((p) => `${p.name}/${p.isHuman ? 'H' : 'AI'}`) });
+    rlog.info('match started', { code: this.code, fillBots: this.fillBots, players: players.map((p) => `${p.name}/${p.isHuman ? 'H' : 'AI'}`) });
     return true;
   }
 
@@ -142,6 +217,13 @@ export class Room {
     const m = this.members.get(id);
     if (!m || !this.started) return;
     this.controllers.get(m.slot)?.setInput(input);
+  }
+
+  _flushEvents() {
+    if (this._pendingEvents.length === 0) return undefined;
+    const ev = this._pendingEvents;
+    this._pendingEvents = [];
+    return ev;
   }
 
   _tick() {
@@ -164,8 +246,9 @@ export class Room {
       this._snapAcc += dt;
       if (this._snapAcc >= SNAP_INTERVAL) {
         this._snapAcc = 0;
-        this.broadcast(buildSnapshot(this.match));
-        // First snapshot + a heartbeat every ~5s confirm the loop is alive.
+        const snap = buildSnapshot(this.match);
+        snap.ev = this._flushEvents(); // piggy-back the gameplay-event batch
+        this.broadcast(snap);
         if (this._snapCount === 0) rlog.info('first snapshot', { code: this.code, phase: this.match.phase });
         else if (this._snapCount % (SNAP_HZ * 5) === 0) rlog.debug('snapshot heartbeat', { code: this.code, n: this._snapCount, phase: this.match.phase });
         this._snapCount++;
@@ -173,8 +256,9 @@ export class Room {
 
       if (this.match.matchOver && !this._matchOverSent) {
         this._matchOverSent = true;
-        rlog.info('match over', { code: this.code, winnerSlot: this.match.matchWinner ? this.match.matchWinner.slot : null });
-        this.broadcast({ t: MSG.MATCH_OVER, winnerSlot: this.match.matchWinner ? this.match.matchWinner.slot : null });
+        const winner = this.match.matchWinner;
+        rlog.info('match over', { code: this.code, winnerSlot: winner ? winner.slot : null, winner: winner ? winner.name : null });
+        this.broadcast({ t: MSG.MATCH_OVER, winnerSlot: winner ? winner.slot : null, winnerName: winner ? winner.name : null });
         this.stop();
       }
     } catch (err) {
@@ -190,7 +274,7 @@ export class Room {
 
   // ── broadcast helpers ──────────────────────────────────────────────────────
   _broadcastRoomState() {
-    this.broadcast({ t: MSG.ROOM_STATE, code: this.code, started: this.started, maxSlots: MAX_SLOTS, members: this.roster() });
+    this.broadcast({ t: MSG.ROOM_STATE, code: this.code, started: this.started, maxSlots: MAX_SLOTS, fillBots: this.fillBots, members: this.roster() });
   }
 
   _broadcastRoundStart() {

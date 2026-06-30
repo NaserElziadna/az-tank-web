@@ -17,6 +17,7 @@ export class OnlineScreen {
     this.localSlot = null;
     this.isHost = false;
     this.members = [];
+    this.fillBots = true;
     this._launched = false;
 
     this.root = el('div.screen.menu', {}, []);
@@ -62,18 +63,20 @@ export class OnlineScreen {
     const seats = [];
     for (let i = 0; i < 4; i++) {
       const m = this.members.find((x) => x.slot === i);
+      const seatLabel = m ? `${m.name}${m.isHost ? '  ★' : ''}` : this.fillBots ? 'Bot (AI)' : 'Open';
       seats.push(
         el('div.online__seat' + (m ? '.online__seat--filled' : ''), {}, [
           el('span.online__seat-no', { text: `P${i + 1}` }),
-          el('span.online__seat-name', { text: m ? `${m.name}${m.isHost ? '  ★' : ''}` : 'Bot (AI)' }),
+          el('span.online__seat-name', { text: seatLabel }),
         ]),
       );
     }
     this.root.appendChild(
       el('div.online', {}, [
         el('div.menu__logo', {}, [el('span.tank', { text: 'ROOM' }), el('span.trouble', { text: this.code })]),
-        el('p.menu__tagline', { text: 'Share this code with friends. Empty seats play as bots.' }),
+        el('p.menu__tagline', { text: this.fillBots ? 'Share this code with friends. Empty seats play as bots.' : 'Share this code with friends. Empty seats stay open.' }),
         el('div.online__seats', {}, seats),
+        this._botToggle(),
         el('div.menu__actions', {}, [
           this.isHost
             ? el('button.btn', { text: '▶  Start Match', on: { click: () => this.net.startMatch() } })
@@ -82,6 +85,13 @@ export class OnlineScreen {
         ]),
       ]),
     );
+  }
+
+  /** Host-only toggle for filling empty seats with AI bots. */
+  _botToggle() {
+    const label = `Fill empty seats with bots:  ${this.fillBots ? 'ON' : 'OFF'}`;
+    if (!this.isHost) return el('p.online__hint', { text: this.fillBots ? 'Empty seats are bots.' : 'Empty seats stay open.' });
+    return el('button', { class: `online__toggle ${this.fillBots ? 'online__toggle--on' : 'online__toggle--off'}`, text: label, on: { click: () => this.net.setFillBots(!this.fillBots) } });
   }
 
   // ── networking ─────────────────────────────────────────────────────────────
@@ -108,14 +118,16 @@ export class OnlineScreen {
     });
     this.net.on('roomState', (m) => {
       this.members = m.members || [];
+      if (typeof m.fillBots === 'boolean') this.fillBots = m.fillBots;
       const me = this.members.find((x) => x.slot === this.localSlot);
       if (me) this.isHost = me.isHost;
-      if (this.code) this._renderLobby();
+      if (this.code && !this._launched) this._renderLobby();
     });
     this.net.on('roundStart', (m) => {
       if (this._launched) return;
       this._launched = true;
-      this.onLaunch(this.net, m); // hand the first round to the game so it inits deterministically
+      // Hand the first round + host/fill state to the game so it inits deterministically.
+      this.onLaunch(this.net, m, { isHost: this.isHost, fillBots: this.fillBots });
     });
     this.net.on('netClose', () => {
       if (!this._launched) this._renderEntry('Disconnected from the server.');

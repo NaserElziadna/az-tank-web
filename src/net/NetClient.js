@@ -112,6 +112,9 @@ export class NetClient {
   startMatch() {
     this.send({ t: MSG.START_MATCH });
   }
+  setFillBots(on) {
+    this.send({ t: MSG.SET_FILL_BOTS, on });
+  }
   leaveRoom() {
     this.send({ t: MSG.LEAVE_ROOM });
   }
