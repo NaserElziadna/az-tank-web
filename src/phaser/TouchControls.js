@@ -1,21 +1,20 @@
 import { el } from '../ui/dom.js';
 
 /**
- * On-screen touch controls for one human tank: a left analog thumb-stick and a
- * right fire button, rendered as a DOM overlay above the canvas. Produces the
- * same {@link import('../core/input/ControlScheme.js').ControlIntent} shape the
- * tanks consume, so it merges cleanly with the keyboard controller.
+ * On-screen touch controls for one human tank: a FLOATING left thumb-stick plus
+ * right-hand fire/power buttons, as a DOM overlay above the canvas. Produces the
+ * same {@link import('../core/input/ControlScheme.js').ControlIntent} the tanks
+ * consume, so it merges cleanly with the keyboard controller.
  *
- * Steering is "point where you want to go": the stick direction is the tank's
- * desired heading. {@link read} is given the tank's current rotation and turns
- * it toward the stick while driving forward — far more intuitive on a top-down
- * tank than tilt-to-rotate. If no rotation is supplied it falls back to the old
- * tank-drive mapping (up → forward, tilt → turn). Pointer events cover touch +
- * mouse, so it also works for desktop testing.
+ * Floating stick: touch anywhere in the left zone and the stick appears under
+ * your finger (no hunting for a fixed knob). Control is direct tank-drive —
+ * push up/down = forward/reverse, left/right = rotate — which is immediate and
+ * precise in a maze (no "turn toward a point then drive" lag). Pointer events
+ * cover touch + mouse.
  */
-const STICK_DEAD = 0.22; // ignore tiny stick offsets (normalized 0..1)
-const TURN_EASE = 0.38; // rad of heading error for full-speed turn; eases below it
-const DRIVE_ARC = 2.0; // drive forward while the target is within ~115° of facing
+const STICK_DEAD = 0.16; // ignore tiny offsets (normalized 0..1)
+const DRIVE_THRESH = 0.32; // vertical push needed to move
+const RADIUS = 60; // px throw of the stick
 
 export class TouchControls {
   /** @param {HTMLElement} parent element to overlay (the game stage) */
@@ -25,28 +24,30 @@ export class TouchControls {
     this.fire = false;
     this._abilityPressed = false; // edge, consumed on read()
     this._stickId = null;
-    this._radius = 56; // px throw of the stick
-    this._vx = 0; // normalized stick offset (−1..1), +x right
-    this._vy = 0; // normalized stick offset (−1..1), +y down
-    this._mag = 0; // normalized stick magnitude (0..1)
+    this._ox = 0; // stick origin (touch-down point), viewport px
+    this._oy = 0;
+    this._vx = 0; // normalized offset −1..1
+    this._vy = 0;
+    this._mag = 0;
     this._build(parent);
   }
 
   _build(parent) {
+    this.zone = el('div.touch__zone'); // invisible left-half capture area
     this.knob = el('div.touch__knob');
-    this.stick = el('div.touch__stick', {}, [this.knob]);
+    this.stick = el('div.touch__stick', {}, [this.knob]); // floating; hidden until touched
     this.fireBtn = el('div.touch__fire', { text: 'FIRE' });
     this.abilityBtn = el('div.touch__ability', { text: 'POWER' });
-    this.root = el('div.touch', {}, [this.stick, this.fireBtn, this.abilityBtn]);
+    this.root = el('div.touch', {}, [this.zone, this.stick, this.fireBtn, this.abilityBtn]);
     parent.appendChild(this.root);
 
-    // ── stick ──
-    this.stick.addEventListener('pointerdown', (e) => this._stickStart(e));
-    this.stick.addEventListener('pointermove', (e) => this._stickMove(e));
+    // ── floating stick (touch anywhere in the left zone) ──
+    this.zone.addEventListener('pointerdown', (e) => this._stickStart(e));
+    this.zone.addEventListener('pointermove', (e) => this._stickMove(e));
     const end = (e) => this._stickEnd(e);
-    this.stick.addEventListener('pointerup', end);
-    this.stick.addEventListener('pointercancel', end);
-    this.stick.addEventListener('lostpointercapture', end);
+    this.zone.addEventListener('pointerup', end);
+    this.zone.addEventListener('pointercancel', end);
+    this.zone.addEventListener('lostpointercapture', end);
 
     // ── fire button ──
     const down = (e) => {
@@ -62,7 +63,6 @@ export class TouchControls {
     this.fireBtn.addEventListener('pointerup', up);
     this.fireBtn.addEventListener('pointercancel', up);
     this.fireBtn.addEventListener('pointerleave', up);
-    this._fireUp = up;
 
     // ── ability button (edge-triggered: one activation per tap) ──
     this.abilityBtn.addEventListener('pointerdown', (e) => {
@@ -77,70 +77,61 @@ export class TouchControls {
   }
 
   _stickStart(e) {
+    if (this._stickId !== null) return;
     e.preventDefault();
     this._stickId = e.pointerId;
+    this._ox = e.clientX;
+    this._oy = e.clientY;
+    // Place the floating base under the finger and reveal it.
+    this.stick.style.left = `${e.clientX - RADIUS}px`;
+    this.stick.style.top = `${e.clientY - RADIUS}px`;
+    this.stick.classList.add('is-active');
+    this.knob.style.transform = 'translate(0px, 0px)';
     try {
-      this.stick.setPointerCapture(e.pointerId);
-    } catch (err) {
-      /* capture unsupported (e.g. synthetic events) — move still tracks */
+      this.zone.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture unsupported — move still tracks */
     }
-    this._stickMove(e);
   }
 
   _stickMove(e) {
     if (this._stickId !== e.pointerId) return;
-    const r = this.stick.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    let dx = e.clientX - cx;
-    let dy = e.clientY - cy;
+    let dx = e.clientX - this._ox;
+    let dy = e.clientY - this._oy;
     const len = Math.hypot(dx, dy);
-    const max = this._radius;
-    if (len > max) {
-      dx = (dx / len) * max;
-      dy = (dy / len) * max;
+    if (len > RADIUS) {
+      dx = (dx / len) * RADIUS;
+      dy = (dy / len) * RADIUS;
     }
     this.knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    this._vx = clamp(dx / max, -1, 1);
-    this._vy = clamp(dy / max, -1, 1);
+    this._vx = clamp(dx / RADIUS, -1, 1);
+    this._vy = clamp(dy / RADIUS, -1, 1);
     this._mag = Math.min(1, Math.hypot(this._vx, this._vy));
   }
 
   _stickEnd(e) {
     if (this._stickId !== e.pointerId && e.pointerId !== undefined) return;
     this._stickId = null;
-    this._vx = 0;
-    this._vy = 0;
-    this._mag = 0;
-    this.drive = 0;
-    this.turn = 0;
+    this._vx = this._vy = this._mag = 0;
+    this.drive = this.turn = 0;
+    this.stick.classList.remove('is-active');
     this.knob.style.transform = 'translate(0px, 0px)';
   }
 
   /**
-   * @param {number} [currentRot] tank's current world heading (radians). When
-   *   given, the stick steers toward the pushed direction; otherwise falls back
-   *   to tank-drive (up → forward, tilt → turn).
+   * Direct tank-drive: horizontal = rotate, vertical = throttle. Immediate, no
+   * heading lag. (currentRot is accepted for API compatibility but unused.)
    * @returns {import('../core/input/ControlScheme.js').ControlIntent}
    */
-  read(currentRot) {
+  read() {
     const abilityPressed = this._abilityPressed;
     this._abilityPressed = false; // consume the edge
     let drive = 0;
     let turn = 0;
     if (this._mag >= STICK_DEAD) {
-      if (Number.isFinite(currentRot)) {
-        // Heading-based: rotate toward where the stick points, drive once roughly facing it.
-        const desired = Math.atan2(this._vy, this._vx);
-        const err = shortAngle(desired - currentRot);
-        turn = clamp(err / TURN_EASE, -1, 1);
-        drive = Math.abs(err) < DRIVE_ARC ? 1 : 0;
-      } else {
-        // Fallback tank-drive: tilt turns, push up/down throttles.
-        turn = this._vx;
-        const fwd = -this._vy;
-        drive = fwd > 0.4 ? 1 : fwd < -0.4 ? -1 : 0;
-      }
+      turn = clamp(this._vx * 1.3, -1, 1); // a touch of extra steering sensitivity
+      const fwd = -this._vy; // screen y is down; up = forward
+      drive = fwd > DRIVE_THRESH ? 1 : fwd < -DRIVE_THRESH ? -1 : 0;
     }
     this.drive = drive;
     this.turn = turn;
@@ -162,19 +153,11 @@ function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-/** Wrap an angle to (−π, π] so heading errors take the shortest way around. */
-function shortAngle(a) {
-  while (a > Math.PI) a -= Math.PI * 2;
-  while (a < -Math.PI) a += Math.PI * 2;
-  return a;
-}
-
 /**
  * Whether on-screen controls should be shown — only on genuine mobile/tablet
- * screens, NOT on desktops (including touchscreen laptops, which also have a
- * mouse). The test: a coarse primary pointer AND no hover capability (a mouse
- * provides hover, so touchscreen laptops are excluded), with a mobile user-agent
- * fallback for older browsers. `?touch=1`/`?touch=0` force it on/off for testing.
+ * screens, NOT desktops (including touchscreen laptops, which also have a mouse).
+ * The test: a coarse primary pointer AND no hover, with a mobile UA fallback.
+ * `?touch=1`/`?touch=0` force it on/off for testing.
  */
 export function isTouchDevice() {
   try {

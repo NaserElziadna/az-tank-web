@@ -87,7 +87,7 @@ export class PhaserRenderer {
       // controls float over the side/bottom gutters (a wide arena leaves side
       // margins on a landscape phone). A static arena also keeps the local tank's
       // predicted movement feeling instant (no scrolling camera to lag behind).
-      this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - this.hudHeight, this.drawHud ? 26 : 8);
+      this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - this.hudHeight, this.drawHud ? 26 : 4);
       let ox = this.camera.offsetX;
       let oy = this.camera.offsetY;
       if (this.shake > 0) {
