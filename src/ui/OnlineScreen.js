@@ -79,7 +79,7 @@ export class OnlineScreen {
     this.root.appendChild(
       el('div.online', {}, [
         el('div.menu__logo', {}, [el('span.tank', { text: 'AZ TANK' }), el('span.trouble', { text: 'ONLINE' })]),
-        el('p.menu__tagline', { text: 'Play with friends — 2 or more players per room. Add AI bots to round out the arena.' }),
+        el('p.menu__tagline', { text: 'Play with friends or jump straight in against bots. Up to 4 players per room.' }),
         error ? el('p.online__error', { text: error }) : null,
         el('div.online__row', {}, [nameInput]),
         el('div.online__actions', {}, [
@@ -120,7 +120,7 @@ export class OnlineScreen {
     this.root.appendChild(
       el('div.online', {}, [
         el('div.menu__logo', {}, [el('span.tank', { text: 'ROOM' }), el('span.trouble', { text: this.code })]),
-        el('p.menu__tagline', { text: 'Share this code with friends. You need at least 2 players to start.' }),
+        el('p.menu__tagline', { text: 'Share this code with friends. Start any time against bots — friends drop into the next round.' }),
         el('button.online__copy', { text: '🔗 Copy invite link', on: { click: (e) => this._copyLink(e.currentTarget) } }),
         el('div.online__section-label', { text: 'Players' }),
         el('div.online__seats', {}, seats),

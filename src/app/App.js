@@ -114,6 +114,7 @@ export class App {
   startOnlineGame(net, firstRound, meta = {}) {
     this.onlineIsHost = !!meta.isHost;
     this.onlineReviveBots = meta.reviveBots !== false;
+    this.onlineLocalSlot = meta.localSlot ?? null;
 
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
@@ -303,15 +304,18 @@ export class App {
 
   _showOnlineMatchOver(m) {
     const notEnough = m && m.reason === 'notEnoughPlayers';
+    const wonLocally = m && m.winnerSlot != null && m.winnerSlot === this.onlineLocalSlot;
     const name = m && (m.winnerName || (m.winnerSlot != null ? `Player ${m.winnerSlot + 1}` : null));
-    const headline = notEnough ? 'Not enough players' : name ? `${name} wins the match!` : 'Match over';
+    const headline = notEnough ? 'Not enough players' : wonLocally ? '🏆 You win the match!' : name ? `${name} wins the match!` : 'Match over';
+    const nearMiss = notEnough ? null : this._nearMissLine(m && m.standings, m && m.pointsToWin, this.onlineLocalSlot);
     clear(this.matchPanel);
     const actions = [];
-    if (this.onlineIsHost) actions.push(el('button.btn', { text: '↻ Play Again', on: { click: () => this.onlineNet?.startMatch() } }));
+    if (this.onlineIsHost) actions.push(el('button.btn.btn--primary', { text: '↻ One more', on: { click: () => this.onlineNet?.startMatch() } }));
     actions.push(el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }));
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
         el('div.overlay__big', { text: headline }),
+        nearMiss ? el('p.overlay__nearmiss', { text: nearMiss }) : null,
         notEnough ? el('p', { text: 'Waiting for more players to join…', style: { color: 'var(--text-dim)' } }) : null,
         this.onlineIsHost ? null : el('p', { text: 'Waiting for the host to start a rematch…', style: { color: 'var(--text-dim)' } }),
         el('div', { style: { display: 'flex', gap: '14px' } }, actions),
@@ -319,6 +323,24 @@ export class App {
     );
     this.matchPanel.removeAttribute('hidden');
     this.matchPanel.style.display = 'grid';
+  }
+
+  /**
+   * "Down to the wire" beat when the runner-up finished within a point of the
+   * target — near-misses are what drive "one more game". `standings` is
+   * [{slot,name,score}]; returns null when it wasn't close (or data is missing).
+   * @param {{slot:number,name:string,score:number}[]|null|undefined} standings
+   * @param {number|null|undefined} pointsToWin
+   * @param {number|null} localSlot slot of the local player (null for hotseat)
+   */
+  _nearMissLine(standings, pointsToWin, localSlot) {
+    if (!pointsToWin || !Array.isArray(standings) || standings.length < 2) return null;
+    const sorted = [...standings].sort((a, b) => b.score - a.score);
+    const runnerUp = sorted[1];
+    if (pointsToWin - runnerUp.score > 1) return null; // wasn't close
+    return localSlot != null && runnerUp.slot === localSlot
+      ? '🔥 So close — you were one point from the win!'
+      : `🔥 Down to the wire — ${runnerUp.name} was one point away!`;
   }
 
   /** Boss mode: a 1-v-1 duel (first to 5) against one lethal tank. */
@@ -364,12 +386,17 @@ export class App {
   }
 
   _showMatchOver(winner, cfg) {
+    const match = this.phaser && this.phaser.match;
+    const standings = match ? match.players.map((p) => ({ slot: p.slot, name: p.name, score: p.score })) : null;
+    const pointsToWin = (match && match.pointsToWin) || (cfg && cfg.pointsToWin) || 0;
+    const nearMiss = this._nearMissLine(standings, pointsToWin, null); // hotseat: no single "you"
     clear(this.matchPanel);
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
-        el('div.overlay__big', { text: winner ? `${winner.name} wins the match!` : 'Match over' }),
+        el('div.overlay__big', { text: winner ? `🏆 ${winner.name} wins the match!` : 'Match over' }),
+        nearMiss ? el('p.overlay__nearmiss', { text: nearMiss }) : null,
         el('div', { style: { display: 'flex', gap: '14px' } }, [
-          el('button.btn', { text: '↻ Play Again', on: { click: () => this._playAgain() } }),
+          el('button.btn.btn--primary', { text: '↻ One more', on: { click: () => this._playAgain() } }),
           el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
         ]),
       ]),

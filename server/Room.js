@@ -13,7 +13,13 @@ const rlog = log.scope('room');
 
 const MAX_HUMANS = 4; // dedicated human seats (slots 0–3)
 const MAX_BOTS = 4; // optional AI tanks stacked above the humans (slots 4–7)
-const MIN_HUMANS_TO_START = 2; // online is player-vs-player; a lone player waits
+// A room never waits for a 2nd human: one player can start immediately against
+// the bots, and friends drop in over the shared link (spawning next round). This
+// kills the empty-lobby / cold-start dead end that stalled first sessions.
+const MIN_HUMANS_TO_START = 1;
+// Callsign pool for AI tanks so a solo arena reads as a populated game rather
+// than "Bot 1 / Bot 2". Indexed by bot slot, so a bot keeps its name across rounds.
+const BOT_NAMES = ['Rusty', 'Vortex', 'Ironclad', 'Blaze', 'Cobra', 'Havoc', 'Tread', 'Nomad'];
 const SNAP_HZ = 20; // authoritative snapshot rate
 const SNAP_INTERVAL = 1 / SNAP_HZ;
 const POINTS_TO_WIN = 5;
@@ -46,9 +52,10 @@ const FORWARDED_EVENTS = [
  *
  * Seats are two separate pools: up to {@link MAX_HUMANS} real players (slots
  * 0–3) plus a host-configured set of AI bots (slots 4–7), each with its own
- * skill. A match needs {@link MIN_HUMANS_TO_START} humans to begin — a lone
- * player waits in the lobby — and players can join any time there's an open
- * human seat (spawning at the next round). With revive-bots on, killed bots
+ * skill. A single human can start immediately against the bots (no waiting for
+ * a 2nd player), and others join any time there's an open human seat (spawning
+ * at the next round) — so a shared link drops friends into a live game. With
+ * revive-bots on, killed bots
  * respawn while a human is alive, so a round ends on human elimination, never on
  * a bots-only duel. A human who leaves mid-match is handed to the AI so their
  * tank keeps fighting instead of freezing.
@@ -218,8 +225,9 @@ export class Room {
       this._onEmpty?.();
       return;
     }
-    // Online is player-vs-player: if a leaver drops us below the minimum, end
-    // the match so the survivor returns to waiting rather than soloing bots.
+    // A lone survivor keeps playing against the bots (MIN_HUMANS_TO_START = 1),
+    // so this only fires if the threshold is ever raised above 1; at 1 the empty
+    // -room branch above has already handled the last-leaver case.
     if (this.started && !this._matchOverSent && this.members.size < MIN_HUMANS_TO_START) {
       this._endMatchNotEnoughPlayers();
     }
@@ -264,7 +272,7 @@ export class Room {
       const slot = MAX_HUMANS + i;
       const difficulty = Object.values(Difficulty).includes(b.difficulty) ? b.difficulty : Difficulty.HARD;
       const lethal = difficulty === Difficulty.LETHAL;
-      players.push(new Player({ slot, name: `Bot ${i + 1}`, controller: ControllerType.AI, color: colorForSlot(slot), difficulty, lethal }));
+      players.push(new Player({ slot, name: BOT_NAMES[i % BOT_NAMES.length], controller: ControllerType.AI, color: colorForSlot(slot), difficulty, lethal }));
     });
     return { players, humanControllers };
   }
@@ -394,7 +402,13 @@ export class Room {
         this._matchOverSent = true;
         const winner = this.match.matchWinner;
         rlog.info('match over', { code: this.code, winnerSlot: winner ? winner.slot : null, winner: winner ? winner.name : null });
-        this.broadcast({ t: MSG.MATCH_OVER, winnerSlot: winner ? winner.slot : null, winnerName: winner ? winner.name : null });
+        this.broadcast({
+          t: MSG.MATCH_OVER,
+          winnerSlot: winner ? winner.slot : null,
+          winnerName: winner ? winner.name : null,
+          pointsToWin: this.pointsToWin,
+          standings: this.match.players.map((p) => ({ slot: p.slot, name: p.name, score: p.score })),
+        });
         this.stop();
       }
     } catch (err) {

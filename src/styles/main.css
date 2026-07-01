@@ -146,6 +146,23 @@ body {
 .btn--lethal:active {
   box-shadow: 0 1px 0 #5e0a0d, 0 3px 8px var(--shadow);
 }
+/* The "one more game" button — same gold as .btn but larger and gently pulsing
+   so the eye lands on it first. Pulse is dropped for reduced-motion users. */
+.btn--primary {
+  font-size: 21px;
+  padding: 16px 44px;
+  animation: btn-pulse 1.8s ease-in-out infinite;
+}
+.btn--primary:active {
+  animation: none;
+}
+@keyframes btn-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn--primary { animation: none; }
+}
 
 .menu__actions {
   display: flex;
@@ -533,6 +550,14 @@ body {
 .overlay__big.go {
   color: #3aa017;
   text-shadow: 0 5px 0 #1c5e0c, 0 12px 26px rgba(0, 0, 0, 0.5);
+}
+/* "Down to the wire" near-miss line under the match-over headline. */
+.overlay__nearmiss {
+  margin: 0;
+  font-size: clamp(16px, 3.5vw, 24px);
+  font-weight: 800;
+  color: #ffd766;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 @keyframes overlay-pop {
   0% {

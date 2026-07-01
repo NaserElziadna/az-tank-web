@@ -117,13 +117,16 @@ export const C = Object.freeze({
   }),
 
   // ── Round / game flow ─────────────────────────────────────────────────────
+  // Dead time between rounds is the #1 retention killer, so these are kept tight:
+  // kill → next "GO" is ~2.7s (result 1.1s + 3-2-1 at 0.4s + GO 0.4s), down from
+  // an earlier ~5.2s. The familiar 3-2-1 beat is preserved, just faster.
   FLOW: Object.freeze({
     BETWEEN_ROUNDS_DURATION: 1.0,
     COUNTDOWN_START_VALUE: 3,
-    COUNTDOWN_DURATION: 0.5,
+    COUNTDOWN_DURATION: 0.4,
     // Result is shown during ENDING; this also serves as the between-rounds gap.
-    ROUND_FINISHING_DURATION: 2.2,
-    GO_DURATION: 0.5,
+    ROUND_FINISHING_DURATION: 1.1,
+    GO_DURATION: 0.4,
     REVIVE_DELAY: 1.5, // online: delay before a killed bot respawns (revive mode)
   }),
 

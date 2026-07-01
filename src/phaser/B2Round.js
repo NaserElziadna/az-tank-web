@@ -540,6 +540,16 @@ export class B2Round {
    */
   _checkFinished() {
     if (this.finished) return;
+    // A lone tank (solo human with no bots, or everyone left but one) can't be
+    // resolved by the elimination rules below, so end the round directly — a
+    // match must never hang. Winner is the survivor, if any.
+    if (this.tanks.length <= 1) {
+      this.finished = true;
+      const s = this.tanks.find((t) => t.alive);
+      this.winnerSlot = s ? s.slot : null;
+      this.emit('round:decided', { winnerSlot: this.winnerSlot });
+      return;
+    }
     const humanCount = this.humanCount;
     if (humanCount >= 2) {
       const alive = this.humansAlive;
@@ -639,9 +649,12 @@ export class B2Round {
     if (this.killLog.length > 16) this.killLog.shift();
     this.b2.destroyBody(tank.body);
     this.emit('tank:destroyed', { slot: tank.slot, killerSlot, colorKey: tank.colorKey, x: tank.position.x, y: tank.position.y });
-    // Revive a fallen bot after a short delay, as long as a human is still in the
-    // fight — keeps live opponents on the board without ending the round.
-    if (this.reviveBots && !tank.player.isHuman && this.humansAlive > 0) {
+    // Revive a fallen bot after a short delay, but ONLY in a genuine ≥2-human
+    // match: revive keeps live opponents around so a bots-only duel can't decide
+    // a human-vs-human round. In a solo (1-human) game it would make the round
+    // unwinnable (bots respawn forever), so there it stays classic last-tank-
+    // standing — the human wins by clearing every bot.
+    if (this.reviveBots && this.humanCount >= 2 && !tank.player.isHuman && this.humansAlive > 0) {
       this._reviveQueue.push({ slot: tank.slot, at: this._time + C.FLOW.REVIVE_DELAY });
     }
   }

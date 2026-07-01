@@ -18,8 +18,8 @@ export class B2Match {
     this.bus = bus;
     this.mazeGen = new MazeGenerator(rng);
     this.players = [];
-    this.score = new Score(0);
-    this.pointsToWin = 0;
+    this.score = new Score(5);
+    this.pointsToWin = 5; // first-to-5 by default (0 = endless; set via configure)
     this.enabledCrates = null;
     this.round = null;
     this.spawner = null;
@@ -39,7 +39,7 @@ export class B2Match {
     return this.round;
   }
 
-  configure(players, { pointsToWin = 0, enabledCrates = null, humanControllers = new Map(), reviveBots = false } = {}) {
+  configure(players, { pointsToWin = 5, enabledCrates = null, humanControllers = new Map(), reviveBots = false } = {}) {
     this.players = players;
     this.pointsToWin = pointsToWin;
     this.score = new Score(pointsToWin);
