@@ -82,15 +82,12 @@ export class PhaserRenderer {
 
     const round = match.sim;
     if (round) {
-      const viewH = h - this.hudHeight;
-      const focus = !this.drawHud && this.focusSlot != null ? round.tanks.find((t) => t.slot === this.focusSlot) : null;
-      if (focus) {
-        // Zoom so ~5.5 tiles are visible; the camera follows the tank, clamped to the arena.
-        const followScale = viewH > 0 ? viewH / (5.5 * C.MAZE.TILE_SIZE) : 14;
-        this.camera.follow(focus.position.x, focus.position.y, round.maze.worldWidth, round.maze.worldHeight, w, viewH, followScale);
-      } else {
-        this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, viewH, 26);
-      }
+      // Show the whole arena, fixed and centered, filling the view. On mobile we
+      // trim the padding so the maze is as large as possible; the on-screen
+      // controls float over the side/bottom gutters (a wide arena leaves side
+      // margins on a landscape phone). A static arena also keeps the local tank's
+      // predicted movement feeling instant (no scrolling camera to lag behind).
+      this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - this.hudHeight, this.drawHud ? 26 : 8);
       let ox = this.camera.offsetX;
       let oy = this.camera.offsetY;
       if (this.shake > 0) {
