@@ -29,7 +29,38 @@ export class OnlineScreen {
     this._launched = false;
 
     this.root = el('div.screen.menu', {}, []);
-    this._renderEntry();
+    // A saved session (from a refresh / crash / dropped connection) takes priority
+    // over the entry screen — try to slip back into the room we were in.
+    if (!this._tryResume()) this._renderEntry();
+  }
+
+  /**
+   * Reclaim a prior session if one is saved, instead of starting fresh. The
+   * server reserves a dropped player's slot for a grace window; within it, a
+   * refresh / reopened tab lands the player back in the same seat (mid-match it
+   * relaunches straight into the live round). Falls back to entry on failure.
+   */
+  _tryResume() {
+    const s = NetClient.savedSession();
+    if (!s) return false;
+    // A deep link to a *different* room is an explicit "join this one" — don't let
+    // a stale saved session hijack it; fall through to the normal join instead.
+    if (this.initialCode && this.initialCode !== s.code) return false;
+    this._resuming = true;
+    this._renderResuming();
+    this._connectThen(() => this.net.sendRejoin(s.code, s.token));
+    return true;
+  }
+
+  _renderResuming() {
+    clear(this.root);
+    this.root.appendChild(
+      el('div.online', {}, [
+        el('div.menu__logo', {}, [el('span.tank', { text: 'AZ TANK' }), el('span.trouble', { text: 'ONLINE' })]),
+        el('p.online__waiting', { text: 'Reconnecting to your game…' }),
+        el('div.menu__actions', { style: { marginTop: '18px' } }, [el('button.btn.btn--ghost', { text: '← Cancel', on: { click: () => this._leave() } })]),
+      ]),
+    );
   }
 
   // ── screens ────────────────────────────────────────────────────────────────
@@ -195,7 +226,9 @@ export class OnlineScreen {
 
   _wireHandlers() {
     this._wired = true;
-    this.net.on('joinResult', (m) => {
+    this._unsubs = this._unsubs || [];
+    const add = (type, fn) => this._unsubs.push(this.net.on(type, fn));
+    add('joinResult', (m) => {
       if (!m.ok) return this._renderEntry(m.reason || 'Could not join the room.');
       this.code = m.code;
       this.localSlot = m.slot;
@@ -203,7 +236,7 @@ export class OnlineScreen {
       this.onRoom(m.code); // let the app update the URL to a shareable #/room/CODE
       this._renderLobby();
     });
-    this.net.on('roomState', (m) => {
+    add('roomState', (m) => {
       this.members = m.members || [];
       if (Array.isArray(m.bots)) this.bots = m.bots;
       if (typeof m.reviveBots === 'boolean') this.reviveBots = m.reviveBots;
@@ -216,15 +249,50 @@ export class OnlineScreen {
       if (me) this.isHost = me.isHost;
       if (this.code && !this._launched) this._renderLobby();
     });
-    this.net.on('roundStart', (m) => {
+    add('roundStart', (m) => {
       if (this._launched) return;
       this._launched = true;
       // Hand the first round + host/revive state to the game so it inits deterministically.
       this.onLaunch(this.net, m, { isHost: this.isHost, reviveBots: this.reviveBots, localSlot: this.localSlot });
     });
-    this.net.on('netClose', () => {
+    // Resume (after a refresh/crash): the server put us back in our reserved slot.
+    add('reconnected', (m) => {
+      this._resuming = false;
+      this.code = m.code;
+      this.localSlot = m.slot;
+      this.isHost = m.isHost;
+      this.onRoom(m.code);
+      // If the match is already running, a roundStart follows and launches the
+      // game; otherwise drop straight back into the lobby.
+      if (!this._launched) this._renderLobby();
+    });
+    add('reconnectFailed', () => {
+      this._resuming = false;
+      NetClient.clearSession();
+      if (this._launched) return;
+      // The old game is gone (or the server blipped). Don't dead-end on an error —
+      // drop to the normal entry with a fresh socket so a prefilled code (deep
+      // link) auto-joins, and the Join button works.
+      this._resetNet();
+      this._renderEntry();
+    });
+    add('netClose', () => {
       if (!this._launched) this._renderEntry('Disconnected from the server.');
     });
+  }
+
+  /** Drop the current socket + its handlers and start clean (after a failed resume). */
+  _resetNet() {
+    for (const off of this._unsubs || []) off?.();
+    this._unsubs = [];
+    try {
+      this.net.close();
+    } catch {
+      /* ignore */
+    }
+    this.net = new NetClient();
+    this._wired = false;
+    this._autoJoined = false;
   }
 
   _copyLink(btn) {

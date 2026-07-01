@@ -112,7 +112,7 @@ function handle(ws, conn, msg) {
       const res = room ? room.rejoin(conn.id, ws, msg.token) : null;
       if (!res) return send(ws, { t: MSG.REJOIN_RESULT, ok: false, reason: 'Session expired' });
       conn.room = room;
-      send(ws, { t: MSG.REJOIN_RESULT, ok: true, code: room.code, slot: res.slot, token: res.token, isHost: res.isHost });
+      send(ws, { t: MSG.REJOIN_RESULT, ok: true, code: room.code, slot: res.slot, token: res.token, isHost: res.isHost, started: room.started });
       break;
     }
     case MSG.START_MATCH: {

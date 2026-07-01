@@ -27,6 +27,28 @@ export class NetClient {
     this._reconnecting = false;
   }
 
+  static SESSION_KEY = 'aztank.session';
+
+  /** Saved reconnect credentials from a prior tab/session, or null. */
+  static savedSession() {
+    try {
+      const raw = localStorage.getItem(NetClient.SESSION_KEY);
+      const s = raw ? JSON.parse(raw) : null;
+      return s && s.code && s.token ? s : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Forget the saved session (intentional leave, or it expired server-side). */
+  static clearSession() {
+    try {
+      localStorage.removeItem(NetClient.SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
   static defaultUrl() {
     if (typeof window === 'undefined') return 'ws://localhost:8080/ws';
     const env = import.meta?.env?.VITE_WS_URL;
@@ -99,6 +121,7 @@ export class NetClient {
     if ((msg.t === MSG.JOIN_RESULT || msg.t === MSG.REJOIN_RESULT) && msg.ok) {
       if (msg.token) this.token = msg.token;
       if (msg.code) this.code = msg.code;
+      this._saveSession(); // survive a refresh / crash so we can reclaim this slot
     }
     if (msg.t === MSG.REJOIN_RESULT) {
       this._reconnecting = false;
@@ -169,6 +192,20 @@ export class NetClient {
   startMatch() {
     this.send({ t: MSG.START_MATCH });
   }
+  /** Reclaim a reserved slot after a refresh/crash, using saved credentials. */
+  sendRejoin(code, token) {
+    this.code = code;
+    this.token = token;
+    this.send({ t: MSG.REJOIN, code, token });
+  }
+  /** Persist reconnect credentials so a fresh page load can resume this slot. */
+  _saveSession() {
+    try {
+      if (this.code && this.token) localStorage.setItem(NetClient.SESSION_KEY, JSON.stringify({ code: this.code, token: this.token }));
+    } catch {
+      /* ignore (private mode / no storage) */
+    }
+  }
   /** Host sets the bot roster: an array of `{difficulty}`, one per AI tank. */
   setBots(bots) {
     this.send({ t: MSG.SET_BOTS, bots });
@@ -198,6 +235,7 @@ export class NetClient {
 
   close() {
     this._closing = true; // intentional close → don't auto-reconnect
+    NetClient.clearSession(); // deliberate leave — don't auto-resume next time
     this._stopPing();
     try {
       this.ws?.close();

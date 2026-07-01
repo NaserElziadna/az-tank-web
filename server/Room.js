@@ -18,7 +18,7 @@ const SNAP_HZ = 20; // authoritative snapshot rate
 const SNAP_INTERVAL = 1 / SNAP_HZ;
 const POINTS_TO_WIN = 5;
 const MAX_PENDING_EVENTS = 120; // safety cap on the per-snapshot event batch
-const RECONNECT_GRACE_MS = 30000; // keep a dropped player's slot reserved this long
+const RECONNECT_GRACE_MS = 120000; // keep a dropped player's slot reserved this long (refresh / drop / battery)
 
 // Gameplay events forwarded to clients so audio + particle effects + screen
 // shake fire online (the sim runs server-side, so the client can't emit these
@@ -190,6 +190,9 @@ export class Room {
     }
     rlog.info('reconnect', { code: this.code, slot: m.slot, name: m.name, started: this.started });
     this._broadcastRoomState();
+    // Mid-match: hand the rejoiner the live round so they can render the arena
+    // immediately instead of staring at the lobby until the next round.
+    if (this.started && this.match && this.match.sim) this.send(newId, this._roundStartMsg());
     return { slot: m.slot, token: m.token, isHost: this.hostId === newId };
   }
 
@@ -421,16 +424,21 @@ export class Room {
     });
   }
 
-  _broadcastRoundStart() {
-    if (!this.match || !this.match.sim) return;
-    const tiles = this.match.sim.maze.tiles;
-    rlog.info('round start', { code: this.code, round: this.match.roundNumber, maze: `${tiles.length}x${tiles[0].length}` });
-    this.broadcast({
+  /** The ROUND_START payload for the current round (maze + player meta). */
+  _roundStartMsg() {
+    return {
       t: MSG.ROUND_START,
       round: this.match.roundNumber,
       maze: serializeMaze(this.match.sim.maze),
       players: this.match.players.map((p) => ({ slot: p.slot, name: p.name, isHuman: p.isHuman, color: p.color })),
-    });
+    };
+  }
+
+  _broadcastRoundStart() {
+    if (!this.match || !this.match.sim) return;
+    const tiles = this.match.sim.maze.tiles;
+    rlog.info('round start', { code: this.code, round: this.match.roundNumber, maze: `${tiles.length}x${tiles[0].length}` });
+    this.broadcast(this._roundStartMsg());
   }
 
   broadcast(msg) {
