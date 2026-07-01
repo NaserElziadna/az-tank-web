@@ -12,8 +12,10 @@ import { el } from '../ui/dom.js';
  * precise in a maze (no "turn toward a point then drive" lag). Pointer events
  * cover touch + mouse.
  */
-const STICK_DEAD = 0.16; // ignore tiny offsets (normalized 0..1)
-const DRIVE_THRESH = 0.32; // vertical push needed to move
+const STICK_DEAD = 0.18; // radial dead zone (whole-vector magnitude, 0..1)
+const DRIVE_THRESH = 0.32; // vertical push needed to move (tank-drive fallback only)
+const TURN_EASE = 0.35; // heading error (rad) for full-rate turn; eases below it
+const DRIVE_ARC = 1.95; // drive forward while the target is within ~112° of facing
 const RADIUS = 60; // px throw of the stick
 
 /** A distinct icon per ability kind (shown only while the tank holds one). */
@@ -123,19 +125,33 @@ export class TouchControls {
   }
 
   /**
-   * Direct tank-drive: horizontal = rotate, vertical = throttle. Immediate, no
-   * heading lag. (currentRot is accepted for API compatibility but unused.)
+   * Heading-based steering: the stick's angle is a TARGET heading; the tank
+   * rotates toward it at its capped rate AND drives forward in the same frame
+   * (no "turn-then-drive" lag), whenever the target is within a wide arc of the
+   * current facing. One clean target angle is derived from the whole stick vector
+   * with atan2 (not per-axis), which avoids diagonal cardinal-snapping. The tank
+   * angle convention matches the sim: rot 0 = +x, +y = down, same as screen.
+   *
+   * If no rotation is supplied, falls back to arcade tank-drive.
+   * @param {number} [currentRot] the tank's current heading (radians)
    * @returns {import('../core/input/ControlScheme.js').ControlIntent}
    */
-  read() {
+  read(currentRot) {
     const abilityPressed = this._abilityPressed;
     this._abilityPressed = false; // consume the edge
     let drive = 0;
     let turn = 0;
     if (this._mag >= STICK_DEAD) {
-      turn = clamp(this._vx * 1.3, -1, 1); // a touch of extra steering sensitivity
-      const fwd = -this._vy; // screen y is down; up = forward
-      drive = fwd > DRIVE_THRESH ? 1 : fwd < -DRIVE_THRESH ? -1 : 0;
+      if (Number.isFinite(currentRot)) {
+        const desired = Math.atan2(this._vy, this._vx);
+        const err = shortAngle(desired - currentRot);
+        turn = clamp(err / TURN_EASE, -1, 1);
+        drive = Math.abs(err) < DRIVE_ARC ? 1 : 0; // turn + drive together
+      } else {
+        turn = clamp(this._vx * 1.3, -1, 1);
+        const fwd = -this._vy; // screen y is down; up = forward
+        drive = fwd > DRIVE_THRESH ? 1 : fwd < -DRIVE_THRESH ? -1 : 0;
+      }
     }
     this.drive = drive;
     this.turn = turn;
@@ -172,6 +188,13 @@ export class TouchControls {
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
+}
+
+/** Wrap an angle to (−π, π] so heading errors take the shortest way around. */
+function shortAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
 }
 
 /**
