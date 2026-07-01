@@ -147,6 +147,12 @@ export class PhaserGame {
     if (steps === 5) this._acc = 0;
     this._alpha = this._acc / C.STEP;
 
+    if (this.touch) {
+      const round = this.match.round;
+      const tank = round && this._touchSlot != null ? round.tanks.find((t) => t.slot === this._touchSlot) : null;
+      this.touch.setAbility(tank && tank.alive ? tank.ability : null);
+    }
+
     if (this.match.matchOver && !this._matchOverFired) {
       this._matchOverFired = true;
       if (this.onMatchOver) this.onMatchOver(this.match.matchWinner);

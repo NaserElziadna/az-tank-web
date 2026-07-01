@@ -16,6 +16,9 @@ const STICK_DEAD = 0.16; // ignore tiny offsets (normalized 0..1)
 const DRIVE_THRESH = 0.32; // vertical push needed to move
 const RADIUS = 60; // px throw of the stick
 
+/** A distinct icon per ability kind (shown only while the tank holds one). */
+const ABILITY_ICON = { megaLaser: '💥', rapidFire: '⚡', phase: '👻', recon: '🎯' };
+
 export class TouchControls {
   /** @param {HTMLElement} parent element to overlay (the game stage) */
   constructor(parent) {
@@ -37,9 +40,10 @@ export class TouchControls {
     this.knob = el('div.touch__knob');
     this.stick = el('div.touch__stick', {}, [this.knob]); // floating; hidden until touched
     this.fireBtn = el('div.touch__fire', { text: 'FIRE' });
-    this.abilityBtn = el('div.touch__ability', { text: 'POWER' });
+    this.abilityBtn = el('div.touch__ability', { text: '' });
     this.root = el('div.touch', {}, [this.zone, this.stick, this.fireBtn, this.abilityBtn]);
     parent.appendChild(this.root);
+    this.setAbility(null); // hidden until the tank actually holds an ability
 
     // ── floating stick (touch anywhere in the left zone) ──
     this.zone.addEventListener('pointerdown', (e) => this._stickStart(e));
@@ -136,6 +140,23 @@ export class TouchControls {
     this.drive = drive;
     this.turn = turn;
     return { drive, turn, fire: this.fire, firePressed: false, abilityPressed };
+  }
+
+  /**
+   * Show the POWER button only while the tank holds an ability, with an icon
+   * unique to that ability kind. Called each frame with the local tank's ability
+   * (a kind string, or null when it has none).
+   * @param {string|null} kind
+   */
+  setAbility(kind) {
+    if (!this.abilityBtn) return;
+    if (kind) {
+      this.abilityBtn.textContent = ABILITY_ICON[kind] || '◆';
+      this.abilityBtn.title = kind;
+      this.abilityBtn.style.display = '';
+    } else {
+      this.abilityBtn.style.display = 'none';
+    }
   }
 
   /** True if the stick or fire button is currently engaged. */

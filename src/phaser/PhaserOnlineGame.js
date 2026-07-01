@@ -128,6 +128,7 @@ export class PhaserOnlineGame {
       this.net.sendInput(intent);
     }
     this._predict(intent, dt);
+    if (this.touch) this.touch.setAbility(this._authLocalTank()?.ability ?? null);
     if (this.renderer) this.renderer.update(dt);
 
     // Periodic telemetry: one rich line every 5s (FPS, rtt, interp buffer, who's
