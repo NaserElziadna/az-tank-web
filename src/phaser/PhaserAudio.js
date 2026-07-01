@@ -1,4 +1,5 @@
 import { Howl, Howler } from 'howler';
+import { settings } from '../game/services/SettingsService.js';
 
 /**
  * Sound via howler (the original's audio library). No audio files are shipped,
@@ -8,8 +9,12 @@ import { Howl, Howler } from 'howler';
 export class PhaserAudio {
   /** @param {import('../core/events/EventBus.js').EventBus} bus */
   constructor(bus) {
-    this.enabled = true;
-    Howler.volume(0.5);
+    // Honour the stored preference from the first frame (the toggle/slider used
+    // to do nothing — the classic "settings ignored" bug).
+    this.enabled = settings.get('soundEnabled') !== false;
+    this._volume = clampVol(settings.get('volume'));
+    Howler.volume(this._volume);
+    Howler.mute(!this.enabled);
     this.sounds = {
       shot: this._howl(synthShot(), 0.35),
       shotgun: this._howl(synthNoise(0.18, 2200), 0.4),
@@ -53,14 +58,38 @@ export class PhaserAudio {
   }
 
   setEnabled(on) {
-    this.enabled = on;
-    Howler.mute(!on);
+    this.enabled = !!on;
+    Howler.mute(!this.enabled);
+  }
+
+  /** Master volume 0..1 (independent of the enable toggle). */
+  setVolume(v) {
+    this._volume = clampVol(v);
+    Howler.volume(this._volume);
+  }
+
+  /** Resume a suspended WebAudio context (mobile browsers gate audio behind a
+   *  first user gesture). Safe to call repeatedly / when already running. */
+  unlock() {
+    try {
+      const ctx = Howler.ctx;
+      if (ctx && ctx.state === 'suspended') ctx.resume();
+    } catch {
+      /* ignore — audio just stays silent until the next gesture */
+    }
   }
 
   dispose() {
     for (const off of this._unsub) off();
     for (const k in this.sounds) this.sounds[k].unload();
   }
+}
+
+/** Clamp a stored/UI volume to a valid 0..1 gain, defaulting to 0.5. */
+function clampVol(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0.5;
+  return Math.max(0, Math.min(1, n));
 }
 
 // ── tiny WAV synthesiser ────────────────────────────────────────────────────

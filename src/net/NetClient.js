@@ -183,11 +183,11 @@ export class NetClient {
   }
 
   // ── intent-named helpers ───────────────────────────────────────────────────
-  createRoom(name) {
-    this.send({ t: MSG.CREATE_ROOM, name });
+  createRoom(name, colorId = null) {
+    this.send({ t: MSG.CREATE_ROOM, name, colorId });
   }
-  joinRoom(code, name) {
-    this.send({ t: MSG.JOIN_ROOM, code, name });
+  joinRoom(code, name, colorId = null) {
+    this.send({ t: MSG.JOIN_ROOM, code, name, colorId });
   }
   startMatch() {
     this.send({ t: MSG.START_MATCH });

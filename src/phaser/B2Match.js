@@ -5,7 +5,8 @@ import { B2Round } from './B2Round.js';
 import { CrateSpawner } from '../game/round/CrateSpawner.js';
 import { AIController } from '../ai/AIController.js';
 import { Score } from '../models/Score.js';
-import { RoundPhase } from '../models/enums.js';
+import { RoundPhase, GameModeId } from '../models/enums.js';
+import { createMode } from '../game/mode/GameMode.js';
 
 /**
  * Match orchestrator for the Box2D/Phaser build — the same state machine as the
@@ -20,6 +21,7 @@ export class B2Match {
     this.players = [];
     this.score = new Score(5);
     this.pointsToWin = 5; // first-to-5 by default (0 = endless; set via configure)
+    this.mode = createMode(GameModeId.CLASSIC); // win/score/respawn strategy
     this.enabledCrates = null;
     this.round = null;
     this.spawner = null;
@@ -39,8 +41,9 @@ export class B2Match {
     return this.round;
   }
 
-  configure(players, { pointsToWin = 5, enabledCrates = null, humanControllers = new Map(), reviveBots = false } = {}) {
+  configure(players, { pointsToWin = 5, mode = GameModeId.CLASSIC, enabledCrates = null, humanControllers = new Map(), reviveBots = false } = {}) {
     this.players = players;
+    this.mode = createMode(mode, { pointsToWin }); // team mode reads the target from here
     this.pointsToWin = pointsToWin;
     this.score = new Score(pointsToWin);
     this.enabledCrates = enabledCrates;
@@ -50,6 +53,16 @@ export class B2Match {
       p.score = 0;
       this.score.register(p.slot);
     }
+  }
+
+  /** Current mode id (for snapshots / HUD). */
+  get modeId() {
+    return this.mode.id;
+  }
+
+  /** Seconds left on the round clock for timed modes, or null. */
+  get timeRemaining() {
+    return this.mode.timeRemaining(this);
   }
 
   start() {
@@ -65,8 +78,9 @@ export class B2Match {
     this.roundNumber++;
     const maze = this.mazeGen.generate(this.players.length);
     this.round = new B2Round(maze, this.bus);
+    this.round.mode = this.mode;
     this.round.reviveBots = this.reviveBots;
-    this.spawner = new CrateSpawner(this.enabledCrates);
+    this.spawner = new CrateSpawner(this.enabledCrates, { goldRush: this.mode.id === GameModeId.GOLD_RUSH });
     const spawns = maze.tankSpawns;
     this.players.forEach((player, i) => {
       const spawn = spawns[i % spawns.length];
@@ -79,7 +93,8 @@ export class B2Match {
     this.showGo = false;
     this._timer = 0;
     this.roundResult = null;
-    this.bus.emit('round:created', { round: this.roundNumber });
+    this.mode.onRoundStart(this.round);
+    this.bus.emit('round:created', { round: this.roundNumber, mode: this.mode.id });
   }
 
   update(dt) {
@@ -92,6 +107,7 @@ export class B2Match {
         break;
       case RoundPhase.PLAYING:
         this.spawner.update(dt, this.round);
+        this.mode.onTick(this.round, dt);
         this.round.update(dt, true);
         if (this.round.finished) this._endRound();
         break;
@@ -125,21 +141,17 @@ export class B2Match {
   _endRound() {
     const winnerSlot = this.round.winnerSlot;
     this.roundResult = { winnerSlot };
-    if (winnerSlot != null) {
-      this.score.award(winnerSlot);
-      const w = this.players.find((p) => p.slot === winnerSlot);
-      if (w) w.score = this.score.get(winnerSlot);
-      this.bus.emit('score:changed', { slot: winnerSlot, score: this.score.get(winnerSlot) });
-    }
+    this.mode.onRoundEnd(this, winnerSlot); // classic: +1 to the winner; frag modes: no-op
+    this.bus.emit('round:ended', { winnerSlot, round: this.roundNumber, mode: this.mode.id });
     this.phase = RoundPhase.ENDING;
     this._timer = 0;
   }
 
   _afterRound() {
-    const winnerSlot = this.score.winnerSlot;
-    if (winnerSlot != null) {
+    if (this.mode.isMatchOver(this)) {
       this.matchOver = true;
-      this.matchWinner = this.players.find((p) => p.slot === winnerSlot) || null;
+      const ws = this.mode.matchWinnerSlot(this);
+      this.matchWinner = ws != null ? this.players.find((p) => p.slot === ws) || null : null;
       this.bus.emit('match:over', { winner: this.matchWinner });
       return;
     }

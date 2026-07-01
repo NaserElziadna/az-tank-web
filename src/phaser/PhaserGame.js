@@ -10,6 +10,11 @@ import { TouchControls, isTouchDevice } from './TouchControls.js';
 import { AssetStore } from './AssetStore.js';
 import { TankIconCompositor } from './TankIconCompositor.js';
 import { C } from '../constants/GameConstants.js';
+import { settings } from '../game/services/SettingsService.js';
+import { profile } from '../game/services/ProfileService.js';
+
+/** Brief simulation freeze on a kill so the moment lands (skipped in low-FX). */
+const HIT_PAUSE = 0.07; // seconds
 
 /**
  * Boots a Phaser CE game that runs the Box2D match. Phaser owns the canvas,
@@ -34,6 +39,14 @@ export class PhaserGame {
     this._acc = 0;
     this._alpha = 0;
     this._matchOverFired = false;
+    this._hitPause = 0;
+    // Hit-pause on kills — a ~70 ms freeze that makes the moment land. Local only
+    // (the online sim is server-authoritative, so a client freeze would desync).
+    this._unsub = [
+      bus.on('tank:destroyed', () => {
+        if (!settings.get('reduceMotion')) this._hitPause = Math.max(this._hitPause, HIT_PAUSE);
+      }),
+    ];
 
     const w = parentEl.clientWidth || 960;
     const h = parentEl.clientHeight || 600;
@@ -71,7 +84,11 @@ export class PhaserGame {
       // Only the dedicated boss wears the dark skin; difficulty-Lethal AIs keep
       // their slot colour (so multiple are distinguishable) + the lethal extras.
       const isLethal = !!pc.lethal || pc.difficulty === Difficulty.LETHAL;
-      const color = pc.lethal ? Palette.lethalTank : colorForSlot(pc.slot);
+      // The local player wears their equipped cosmetic colour; everyone else
+      // keeps their slot colour (and the boss keeps its dark skin).
+      const isLocal = pc.controller === ControllerType.HUMAN && pc.slot === firstHumanSlot;
+      const equipped = isLocal ? profile.equippedCosmetic('color') : null;
+      const color = pc.lethal ? Palette.lethalTank : equipped && equipped.color ? equipped.color : colorForSlot(pc.slot);
       let controls = null;
       if (pc.controller === ControllerType.HUMAN) {
         controls = new PhaserControls(game, schemeForSlot(pc.slot));
@@ -91,7 +108,7 @@ export class PhaserGame {
     this.renderer = new PhaserRenderer(game, this.bus, this.version, this.assets, this.compositor, !isTouchDevice());
     this.renderer.focusSlot = firstHumanSlot ?? null; // mobile camera follows the local player
     this.match = new B2Match(this.bus);
-    this.match.configure(players, { pointsToWin: this.setup.pointsToWin, humanControllers });
+    this.match.configure(players, { pointsToWin: this.setup.pointsToWin, mode: this.setup.mode, humanControllers });
     this.match.start();
   }
 
@@ -136,16 +153,23 @@ export class PhaserGame {
     let dt = this.game.time.elapsedMS / 1000;
     if (!(dt > 0)) dt = C.STEP;
     if (dt > 0.25) dt = 0.25;
-    this._acc += dt;
-    let steps = 0;
-    while (this._acc >= C.STEP && steps < 5) {
-      this.match.update(C.STEP);
-      this.renderer.update(C.STEP);
-      this._acc -= C.STEP;
-      steps++;
+    // Hit-pause: freeze the sim briefly but keep the effects layer (and thus the
+    // explosion/particles) animating, so the kill reads as a punchy beat.
+    if (this._hitPause > 0) {
+      this._hitPause -= dt;
+      this.renderer.update(dt);
+    } else {
+      this._acc += dt;
+      let steps = 0;
+      while (this._acc >= C.STEP && steps < 5) {
+        this.match.update(C.STEP);
+        this.renderer.update(C.STEP);
+        this._acc -= C.STEP;
+        steps++;
+      }
+      if (steps === 5) this._acc = 0;
+      this._alpha = this._acc / C.STEP;
     }
-    if (steps === 5) this._acc = 0;
-    this._alpha = this._acc / C.STEP;
 
     if (this.touch) {
       const round = this.match.round;
@@ -170,6 +194,8 @@ export class PhaserGame {
   }
 
   destroy() {
+    for (const off of this._unsub || []) off?.();
+    this._unsub = null;
     if (this.touch) {
       this.touch.dispose();
       this.touch = null;

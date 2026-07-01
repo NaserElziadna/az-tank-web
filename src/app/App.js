@@ -3,6 +3,7 @@ import { Router } from './Router.js';
 import { MenuScreen } from '../ui/MenuScreen.js';
 import { SetupScreen } from '../ui/SetupScreen.js';
 import { OnlineScreen } from '../ui/OnlineScreen.js';
+import { LockerScreen } from '../ui/LockerScreen.js';
 import { PhaserGame } from '../phaser/PhaserGame.js';
 import { PhaserOnlineGame } from '../phaser/PhaserOnlineGame.js';
 import { PhaserAudio } from '../phaser/PhaserAudio.js';
@@ -11,6 +12,13 @@ import { VoiceChat } from '../net/VoiceChat.js';
 import { ControllerType, Difficulty } from '../models/enums.js';
 import { el, clear } from '../ui/dom.js';
 import { log } from '../core/log/Logger.js';
+import { settings } from '../game/services/SettingsService.js';
+import { profile } from '../game/services/ProfileService.js';
+import { SettingsPanel } from '../ui/SettingsPanel.js';
+import { BalanceTelemetry } from '../game/telemetry/BalanceTelemetry.js';
+import { InstallManager } from './InstallManager.js';
+import { shareOrCopy } from '../ui/share.js';
+import { AdService } from '../services/AdService.js';
 
 const alog = log.scope('app');
 
@@ -30,10 +38,76 @@ export class App {
     this.mount = mount;
     this.bus = new EventBus();
     this.audio = new PhaserAudio(this.bus);
+    this.telemetry = new BalanceTelemetry(this.bus); // balance analytics for local play
+    this.install = new InstallManager(); // deferred PWA install prompt
+    // Ads (portal builds); mute game audio while an ad plays, then restore the
+    // user's sound preference. A dev build has no provider, so these are no-ops.
+    this.ads = new AdService({
+      onAdStart: () => this.audio.setEnabled(false),
+      onAdFinish: () => this.audio.setEnabled(settings.get('soundEnabled') !== false),
+    });
     /** @type {PhaserGame|null} */
     this.phaser = null;
+    // Apply audio-preference changes live (the Settings panel writes the flags).
+    settings.onChange((key, value) => {
+      if (key === 'soundEnabled') this.audio.setEnabled(value);
+      else if (key === 'volume') this.audio.setVolume(value);
+    });
+    // Mobile browsers gate WebAudio behind a first user gesture — unlock on the
+    // first tap/key so SFX aren't silent for the whole first session.
+    const unlock = () => {
+      this.audio.unlock();
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    // Daily streak: register this session once at boot (a missed day is forgiven).
+    this._daily = profile.touchDaily();
     this.router = new Router((r) => this._route(r));
     this.router.start();
+  }
+
+  /** Floating transient toast (rewards, streaks). Auto-dismisses. */
+  _toast(text, ms = 3200) {
+    const t = el('div.toast', { text });
+    this.mount.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('toast--in'));
+    setTimeout(() => {
+      t.classList.remove('toast--in');
+      setTimeout(() => t.remove(), 350);
+    }, ms);
+  }
+
+  /**
+   * Grant coins + XP for a finished match and return a node summarising it for
+   * the match-over panel. Guarded so a match is only ever rewarded once.
+   * @param {{won:boolean, online:boolean}} ctx
+   */
+  _rewardNode({ won, online }) {
+    if (this._rewardClaimed) return null;
+    this._rewardClaimed = true;
+    // Online (likely-human opponents) pays more than solo-vs-bots; a win pays
+    // more than a loss — but you always earn something so play is never punished.
+    const coins = won ? (online ? 60 : 35) : online ? 20 : 12;
+    const xp = won ? 30 : 15;
+    profile.addCoins(coins);
+    const { leveledUp, level } = profile.addXp(xp);
+    if (leveledUp) this._toast(`⬆ Level ${level}!`);
+    return el('p.overlay__reward', { text: `+${coins} 🪙   +${xp} XP${leveledUp ? `   ·   Level ${level}!` : ''}` });
+  }
+
+  /** Overlay the settings panel on top of whatever screen is showing. */
+  showSettings() {
+    if (this._settingsPanel) return;
+    const panel = new SettingsPanel({
+      onClose: () => {
+        panel.root.remove();
+        this._settingsPanel = null;
+      },
+    });
+    this._settingsPanel = panel;
+    this.mount.appendChild(panel.root);
   }
 
   /** Render the screen for the current route. */
@@ -44,6 +118,7 @@ export class App {
     if (seg === 'lethal') return this.startLethalMode();
     if (seg === 'online') return this.showOnline(null);
     if (seg === 'room') return this.showOnline((r.segments[1] || r.query.key || '').toUpperCase() || null);
+    if (seg === 'locker') return this.showLocker();
     return this.showMenu();
   }
 
@@ -53,6 +128,14 @@ export class App {
       this.onlineScreen.dispose();
       this.onlineScreen = null;
     }
+    // Dispose the outgoing screen's subscriptions (e.g. the locker's profile listener).
+    if (this._screenDispose) {
+      this._screenDispose();
+      this._screenDispose = null;
+    }
+    // Any open settings overlay belongs to the outgoing screen; clear() detaches
+    // its node, so drop the reference too (else it can't be reopened).
+    this._settingsPanel = null;
     clear(this.mount);
     this.mount.appendChild(node);
   }
@@ -85,7 +168,34 @@ export class App {
   }
 
   showMenu() {
-    this._setScreen(new MenuScreen({ onPlay: () => this.router.go('/play'), onLethal: () => this.router.go('/lethal'), onOnline: () => this.router.go('/online') }).root);
+    this._setScreen(
+      new MenuScreen({
+        onQuickPlay: () => this.startQuickPlay(),
+        onPlay: () => this.router.go('/play'),
+        onLethal: () => this.router.go('/lethal'),
+        onOnline: () => this.router.go('/online'),
+        onLocker: () => this.router.go('/locker'),
+        onSettings: () => this.showSettings(),
+      }).root,
+    );
+    // Celebrate a returning player's streak once per session.
+    if (this._daily && this._daily.advanced && this._daily.reward > 0 && !this._dailyShown) {
+      this._dailyShown = true;
+      this._toast(`🔥 Day ${this._daily.count} streak — +${this._daily.reward} 🪙`);
+    }
+  }
+
+  /** One-tap "just play": drop straight into a local vs-bots match, no setup. */
+  startQuickPlay() {
+    this.startGame({
+      pointsToWin: 5,
+      mode: settings.get('mode') || 'classic',
+      players: [
+        { slot: 0, name: 'You', controller: ControllerType.HUMAN, difficulty: Difficulty.HARD },
+        { slot: 1, name: 'Rusty', controller: ControllerType.AI, difficulty: Difficulty.MEDIUM },
+        { slot: 2, name: 'Vortex', controller: ControllerType.AI, difficulty: Difficulty.HARD },
+      ],
+    });
   }
 
   /**
@@ -115,6 +225,7 @@ export class App {
     this.onlineIsHost = !!meta.isHost;
     this.onlineReviveBots = meta.reviveBots !== false;
     this.onlineLocalSlot = meta.localSlot ?? null;
+    this._rewardClaimed = false;
 
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
@@ -131,6 +242,7 @@ export class App {
     const topbar = el('div.topbar', {}, [
       el('button.btn--ghost', { text: '☰ Leave', on: { click: () => this.router.go('/') } }),
       el('span.topbar__spacer'),
+      el('button.btn--ghost', { text: '⚙', title: 'Settings', on: { click: () => this.showSettings() } }),
       this.voiceMicEl,
       this.voiceDeafEl,
       this.botToggleEl,
@@ -166,6 +278,7 @@ export class App {
       }
     });
     net.on('roundStart', () => {
+      this._rewardClaimed = false; // a fresh round → the next match-over can reward again
       if (this.matchPanel) {
         this.matchPanel.setAttribute('hidden', 'hidden');
         this.matchPanel.style.display = 'none';
@@ -303,6 +416,7 @@ export class App {
   }
 
   _showOnlineMatchOver(m) {
+    this.ads.interstitial('matchOver'); // frequency-capped; no-op without a provider
     const notEnough = m && m.reason === 'notEnoughPlayers';
     const wonLocally = m && m.winnerSlot != null && m.winnerSlot === this.onlineLocalSlot;
     const name = m && (m.winnerName || (m.winnerSlot != null ? `Player ${m.winnerSlot + 1}` : null));
@@ -312,13 +426,22 @@ export class App {
     const actions = [];
     if (this.onlineIsHost) actions.push(el('button.btn.btn--primary', { text: '↻ One more', on: { click: () => this.onlineNet?.startMatch() } }));
     actions.push(el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }));
+    // Invite link is the growth lever — offer it right at the high-emotion moment.
+    const shareBtn = el('button.btn.btn--secondary', { text: '🔗 Invite a friend' });
+    shareBtn.addEventListener('click', () => shareOrCopy({ title: 'AZ Tank', text: 'Join my tank battle!', url: location.href, button: shareBtn }));
+    actions.push(shareBtn);
+    const installCtl = this.install.control();
+    // Reward the match (skipped when it ended early for lack of players).
+    const rewardNode = notEnough ? null : this._rewardNode({ won: wonLocally, online: true });
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
         el('div.overlay__big', { text: headline }),
+        rewardNode,
         nearMiss ? el('p.overlay__nearmiss', { text: nearMiss }) : null,
         notEnough ? el('p', { text: 'Waiting for more players to join…', style: { color: 'var(--text-dim)' } }) : null,
         this.onlineIsHost ? null : el('p', { text: 'Waiting for the host to start a rematch…', style: { color: 'var(--text-dim)' } }),
-        el('div', { style: { display: 'flex', gap: '14px' } }, actions),
+        el('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' } }, actions),
+        installCtl,
       ]),
     );
     this.matchPanel.removeAttribute('hidden');
@@ -363,14 +486,22 @@ export class App {
     );
   }
 
+  /** Cosmetics locker (unlock ladder): buy + equip colours/trails with coins. */
+  showLocker() {
+    const locker = new LockerScreen({ onBack: () => this.router.go('/') });
+    this._setScreen(locker.root);
+    this._screenDispose = () => locker.dispose();
+  }
+
   startGame(cfg) {
+    this._rewardClaimed = false;
     // Build the in-game screen: a Phaser stage + top bar + match-over panel.
     this.stage = el('div.game__stage');
     this.matchPanel = el('div.overlay', { hidden: 'hidden' });
     this._hudStrip = el('div.hud-strip');
     const topbar = el('div.topbar', {}, [
       el('button.btn--ghost', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
-      el('span'),
+      el('button.btn--ghost', { text: '⚙', title: 'Settings', on: { click: () => this.showSettings() } }),
     ]);
     const root = el(this._gameTag(), {}, [el('div.game__stage-wrap', {}, [this.stage]), this._hudStrip, this.matchPanel, topbar, this._rotateHint()]);
     this._setScreen(root);
@@ -386,19 +517,28 @@ export class App {
   }
 
   _showMatchOver(winner, cfg) {
+    this.ads.interstitial('matchOver'); // frequency-capped; no-op without a provider
     const match = this.phaser && this.phaser.match;
     const standings = match ? match.players.map((p) => ({ slot: p.slot, name: p.name, score: p.score })) : null;
     const pointsToWin = (match && match.pointsToWin) || (cfg && cfg.pointsToWin) || 0;
     const nearMiss = this._nearMissLine(standings, pointsToWin, null); // hotseat: no single "you"
+    const shareBtn = el('button.btn.btn--secondary', { text: '🔗 Share' });
+    shareBtn.addEventListener('click', () => shareOrCopy({ title: 'AZ Tank', text: 'Play AZ Tank — bounce-shot tank battles!', url: location.origin || location.href, button: shareBtn }));
+    const installCtl = this.install.control();
+    const humanWon = !!(winner && winner.isHuman);
+    const rewardNode = this._rewardNode({ won: humanWon, online: false });
     clear(this.matchPanel);
     this.matchPanel.appendChild(
       el('div', { style: { display: 'grid', gap: '18px', justifyItems: 'center', pointerEvents: 'auto' } }, [
         el('div.overlay__big', { text: winner ? `🏆 ${winner.name} wins the match!` : 'Match over' }),
+        rewardNode,
         nearMiss ? el('p.overlay__nearmiss', { text: nearMiss }) : null,
-        el('div', { style: { display: 'flex', gap: '14px' } }, [
+        el('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' } }, [
           el('button.btn.btn--primary', { text: '↻ One more', on: { click: () => this._playAgain() } }),
           el('button.btn.btn--secondary', { text: '☰ Menu', on: { click: () => this.router.go('/') } }),
+          shareBtn,
         ]),
+        installCtl,
       ]),
     );
     this.matchPanel.removeAttribute('hidden');
@@ -406,6 +546,7 @@ export class App {
   }
 
   _playAgain() {
+    this._rewardClaimed = false;
     this.matchPanel.setAttribute('hidden', 'hidden');
     this.matchPanel.style.display = 'none';
     if (this.phaser) this.phaser.restart();

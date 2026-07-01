@@ -1,5 +1,6 @@
 import { ParticleSystem } from './ParticleSystem.js';
 import { rng } from '../../core/math/Random.js';
+import { settings } from '../../game/services/SettingsService.js';
 
 /**
  * Visual effects layer: owns a {@link ParticleSystem} and listens on the event
@@ -63,8 +64,14 @@ export class EffectsLayer {
     this._rings.push({ x, y, t: 0, life: 0.45, r0, r1, color: colorKey ? hexToRgb(colorKey.base) : '255,255,255' });
   }
 
+  /** True when the low-FX / reduce-motion preference is on. */
+  get _low() {
+    return settings.get('reduceMotion') === true;
+  }
+
   /** Light dust kicked up behind a moving tank's treads. */
   dust(x, y) {
+    if (this._low) return; // continuous motion — the main thing low-FX quietens
     this.particles.spawn({
       x: x + (rng.next() - 0.5) * 0.4,
       y: y + (rng.next() - 0.5) * 0.4,
@@ -139,8 +146,33 @@ export class EffectsLayer {
     this.particles.burst(x, y, n, { color, speed, life: 0.35, r0: 0.12, r1: 0.4, alpha0: 0.5, drag: 0.8 });
   }
 
+  /** Equipped cosmetic movement trail behind the local player's tank. `rgb` is
+   *  an "r,g,b" string, or 'rainbow' to cycle hue over time. */
+  tankTrail(x, y, rgb) {
+    if (this._low || !rgb) return;
+    let color = rgb;
+    if (rgb === 'rainbow') {
+      const hue = (performance.now() / 8) % 360;
+      color = hslToRgb(hue, 0.85, 0.55);
+    }
+    this.particles.spawn({
+      x: x + (rng.next() - 0.5) * 0.3,
+      y: y + (rng.next() - 0.5) * 0.3,
+      vx: (rng.next() - 0.5) * 0.4,
+      vy: (rng.next() - 0.5) * 0.4,
+      life: 0.55,
+      r0: 0.34,
+      r1: 0.05,
+      drag: 0.9,
+      color,
+      alpha0: 0.6,
+      alpha1: 0,
+    });
+  }
+
   /** A faint short streak behind a flying bullet. */
   bulletTrail(x, y, colorKey) {
+    if (this._low) return;
     this.particles.spawn({
       x,
       y,
@@ -158,6 +190,7 @@ export class EffectsLayer {
 
   /** A drifting smoke puff — called per-frame behind homing missiles. */
   trail(x, y) {
+    if (this._low) return;
     this.particles.spawn({
       x: x + (rng.next() - 0.5) * 0.1,
       y: y + (rng.next() - 0.5) * 0.1,
@@ -204,4 +237,21 @@ export class EffectsLayer {
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+
+/** HSL (h in degrees, s/l in 0..1) → "r,g,b" string, for the rainbow trail. */
+function hslToRgb(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return `${Math.round((r + m) * 255)},${Math.round((g + m) * 255)},${Math.round((b + m) * 255)}`;
 }

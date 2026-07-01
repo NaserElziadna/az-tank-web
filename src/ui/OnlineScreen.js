@@ -1,5 +1,9 @@
 import { el, clear } from './dom.js';
 import { NetClient } from '../net/NetClient.js';
+import { shareOrCopy } from './share.js';
+import { profile } from '../game/services/ProfileService.js';
+import { MODE_MENU, createMode } from '../game/mode/GameMode.js';
+import { GameModeId } from '../models/enums.js';
 
 /**
  * Online lobby screen. Owns the {@link NetClient} for the session and walks the
@@ -22,6 +26,7 @@ export class OnlineScreen {
     this.bots = []; // [{difficulty}] — host-configured AI roster
     this.reviveBots = true;
     this.pointsToWin = 5;
+    this.mode = GameModeId.CLASSIC; // host-selected game mode
     this.maxHumans = 4;
     this.maxBots = 4;
     this.minToStart = 2;
@@ -73,7 +78,7 @@ export class OnlineScreen {
     // Deep link (#/room/CODE) with a remembered name → join straight away.
     if (this.initialCode && !error && savedName() && !this._autoJoined) {
       this._autoJoined = true;
-      this._connectThen(() => this.net.joinRoom(this.initialCode, getName(nameInput)));
+      this._connectThen(() => this.net.joinRoom(this.initialCode, getName(nameInput), profile.equippedId('color')));
     }
 
     this.root.appendChild(
@@ -83,7 +88,7 @@ export class OnlineScreen {
         error ? el('p.online__error', { text: error }) : null,
         el('div.online__row', {}, [nameInput]),
         el('div.online__actions', {}, [
-          el('button.btn', { text: '＋ Create Room', on: { click: () => this._connectThen(() => this.net.createRoom(getName(nameInput))) } }),
+          el('button.btn', { text: '＋ Create Room', on: { click: () => this._connectThen(() => this.net.createRoom(getName(nameInput), profile.equippedId('color'))) } }),
         ]),
         el('div.online__divider', { text: 'or join with a code' }),
         el('div.online__row', {}, [
@@ -93,7 +98,7 @@ export class OnlineScreen {
             on: {
               click: () => {
                 if (codeInput.value.length !== 4) return this._renderEntry('Enter a 4-letter room code.');
-                this._connectThen(() => this.net.joinRoom(codeInput.value, getName(nameInput)));
+                this._connectThen(() => this.net.joinRoom(codeInput.value, getName(nameInput), profile.equippedId('color')));
               },
             },
           }),
@@ -124,12 +129,25 @@ export class OnlineScreen {
         el('button.online__copy', { text: '🔗 Copy invite link', on: { click: (e) => this._copyLink(e.currentTarget) } }),
         el('div.online__section-label', { text: 'Players' }),
         el('div.online__seats', {}, seats),
+        this._modeRow(),
         this._botConfig(),
         this._reviveRow(),
-        this._optionRow('First to', [[3, '3'], [5, '5'], [10, '10']], this.pointsToWin, (v) => this.net.setSettings({ pointsToWin: v }), this.started),
+        createMode(this.mode).usesPointsToWin
+          ? this._optionRow('First to', [[3, '3'], [5, '5'], [10, '10']], this.pointsToWin, (v) => this.net.setSettings({ pointsToWin: v }), this.started)
+          : null,
         this._startRow(),
       ]),
     );
+  }
+
+  /** Game-mode picker (host-only, lobby-only) with a one-line description. */
+  _modeRow() {
+    const options = MODE_MENU.map((m) => [m.id, m.name]);
+    const blurb = createMode(this.mode).blurb;
+    return el('div.online__mode', {}, [
+      this._optionRow('Mode', options, this.mode, (v) => this.net.setSettings({ mode: v }), this.started),
+      el('p.online__hint', { text: blurb }),
+    ]);
   }
 
   /** Bot roster: a count stepper plus a per-bot skill picker (host-editable). */
@@ -241,6 +259,7 @@ export class OnlineScreen {
       if (Array.isArray(m.bots)) this.bots = m.bots;
       if (typeof m.reviveBots === 'boolean') this.reviveBots = m.reviveBots;
       if (m.pointsToWin) this.pointsToWin = m.pointsToWin;
+      if (m.mode) this.mode = m.mode;
       if (typeof m.maxHumans === 'number') this.maxHumans = m.maxHumans;
       if (typeof m.maxBots === 'number') this.maxBots = m.maxBots;
       if (typeof m.minToStart === 'number') this.minToStart = m.minToStart;
@@ -296,19 +315,7 @@ export class OnlineScreen {
   }
 
   _copyLink(btn) {
-    const url = window.location.href;
-    const done = () => {
-      if (btn) {
-        const prev = btn.textContent;
-        btn.textContent = '✓ Link copied!';
-        setTimeout(() => (btn.textContent = prev), 1500);
-      }
-    };
-    try {
-      navigator.clipboard.writeText(url).then(done, done);
-    } catch {
-      done();
-    }
+    shareOrCopy({ title: 'AZ Tank', text: `Join my AZ Tank room (${this.code || ''})!`, url: window.location.href, button: btn });
   }
 
   _leave() {

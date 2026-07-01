@@ -74,19 +74,30 @@ export const WeaponFactory = {
   },
 };
 
-/** All crate contents that can spawn, with display metadata. */
+/**
+ * Rarity weights (relative spawn odds). A uniform pick made a game-swinging
+ * Mega-Laser as likely as a humble Aimer, which reads as "lost to a lucky
+ * pickup"; weighting keeps the round-deciders scarce. Common ≈ 50, uncommon ≈
+ * 35, rare ≈ 15 — so any given crate is a specific rare only ~3–4% of the time.
+ */
+export const Rarity = Object.freeze({ COMMON: 50, UNCOMMON: 35, RARE: 15 });
+
+/**
+ * All crate contents that can spawn, with display metadata + a rarity `weight`.
+ * Rare (round-deciding) items: Laser, Homing, Mega-Laser, Rapid-Fire, Phase.
+ */
 export const ALL_CRATES = [
-  { kind: WeaponKind.DOUBLE_BARREL, upgrade: false, label: 'Double Barrel' },
-  { kind: WeaponKind.SHOTGUN, upgrade: false, label: 'Shotgun' },
-  { kind: WeaponKind.GATLING, upgrade: false, label: 'Gatling Gun' },
-  { kind: WeaponKind.HOMING, upgrade: false, label: 'Homing Missile' },
-  { kind: WeaponKind.MINE, upgrade: false, label: 'Mines' },
-  { kind: WeaponKind.LASER, upgrade: false, label: 'Laser' },
-  { kind: UpgradeKind.SHIELD, upgrade: true, label: 'Shield' },
-  { kind: UpgradeKind.SPEED_BOOST, upgrade: true, label: 'Speed Boost' },
-  { kind: UpgradeKind.AIMER, upgrade: true, label: 'Aimer' },
-  { kind: AbilityKind.MEGA_LASER, ability: true, label: 'Mega Laser' },
-  { kind: AbilityKind.RAPID_FIRE, ability: true, label: 'Rapid Fire' },
-  { kind: AbilityKind.PHASE, ability: true, label: 'Phase' },
-  { kind: AbilityKind.RECON, ability: true, label: 'Recon' },
+  { kind: WeaponKind.DOUBLE_BARREL, upgrade: false, label: 'Double Barrel', weight: Rarity.COMMON },
+  { kind: WeaponKind.MINE, upgrade: false, label: 'Mines', weight: Rarity.COMMON },
+  { kind: WeaponKind.SHOTGUN, upgrade: false, label: 'Shotgun', weight: Rarity.UNCOMMON },
+  { kind: WeaponKind.GATLING, upgrade: false, label: 'Gatling Gun', weight: Rarity.UNCOMMON },
+  { kind: WeaponKind.HOMING, upgrade: false, label: 'Homing Missile', weight: Rarity.RARE },
+  { kind: WeaponKind.LASER, upgrade: false, label: 'Laser', weight: Rarity.RARE },
+  { kind: UpgradeKind.AIMER, upgrade: true, label: 'Aimer', weight: Rarity.COMMON },
+  { kind: UpgradeKind.SPEED_BOOST, upgrade: true, label: 'Speed Boost', weight: Rarity.COMMON },
+  { kind: UpgradeKind.SHIELD, upgrade: true, label: 'Shield', weight: Rarity.UNCOMMON },
+  { kind: AbilityKind.RECON, ability: true, label: 'Recon', weight: Rarity.UNCOMMON },
+  { kind: AbilityKind.MEGA_LASER, ability: true, label: 'Mega Laser', weight: Rarity.RARE },
+  { kind: AbilityKind.RAPID_FIRE, ability: true, label: 'Rapid Fire', weight: Rarity.RARE },
+  { kind: AbilityKind.PHASE, ability: true, label: 'Phase', weight: Rarity.RARE },
 ];

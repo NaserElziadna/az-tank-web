@@ -15,7 +15,7 @@ export class Player {
    * @param {string} [opts.difficulty] for AI ({@link Difficulty})
    * @param {boolean} [opts.lethal] boss tank — mechanical edge + menacing skin
    */
-  constructor({ slot, name, controller, color, controls = null, difficulty = Difficulty.HARD, lethal = false }) {
+  constructor({ slot, name, controller, color, controls = null, difficulty = Difficulty.HARD, lethal = false, team = null }) {
     this.slot = slot;
     this.name = name;
     this.controller = controller;
@@ -23,6 +23,8 @@ export class Player {
     this.controls = controls;
     this.difficulty = difficulty;
     this.lethal = lethal;
+    /** Team index for team modes (0/1), else null (free-for-all). */
+    this.team = team;
 
     this.score = 0;
     /** Live tank entity for the current round (null between rounds). */

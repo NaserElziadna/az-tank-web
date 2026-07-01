@@ -20,3 +20,11 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
+// Register the PWA service worker in production only. In Vite dev (port 5173) a
+// SW would cache stale modules and fight HMR, so it's skipped there.
+if ('serviceWorker' in navigator && location.port !== '5173') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => log.scope('pwa').warn('sw register failed', { message: err?.message }));
+  });
+}

@@ -1,12 +1,14 @@
 import { EventBus } from '../src/core/events/EventBus.js';
 import { B2Match } from '../src/phaser/B2Match.js';
 import { Player } from '../src/models/Player.js';
-import { ControllerType, Difficulty } from '../src/models/enums.js';
+import { ControllerType, Difficulty, GameModeId } from '../src/models/enums.js';
 import { colorForSlot } from '../src/rendering/Palette.js';
+import { cosmetic } from '../src/game/cosmetics/catalog.js';
 import { C } from '../src/constants/GameConstants.js';
 import { MSG, serializeMaze, buildSnapshot, genToken } from '../src/net/protocol.js';
 import { NetController } from './NetController.js';
 import { AIController } from '../src/ai/AIController.js';
+import { BalanceTelemetry } from '../src/game/telemetry/BalanceTelemetry.js';
 import { log } from '../src/core/log/Logger.js';
 
 const rlog = log.scope('room');
@@ -74,6 +76,7 @@ export class Room {
     this.bots = [{ difficulty: Difficulty.HARD }, { difficulty: Difficulty.HARD }];
     this.reviveBots = true; // killed bots respawn while a human is alive
     this.pointsToWin = POINTS_TO_WIN; // host-controlled (lobby only)
+    this.mode = GameModeId.CLASSIC; // host-controlled game mode (lobby only)
     this.bus = new EventBus();
     this.match = null;
     /** @type {Map<number, NetController>} */
@@ -85,6 +88,7 @@ export class Room {
     this._snapCount = 0;
     this._matchOverSent = false;
     this._pendingEvents = [];
+    this.telemetry = new BalanceTelemetry(this.bus, { context: { code } }); // balance analytics
 
     this.bus.on('round:created', () => {
       this._aiControlDisconnected(); // reserved-but-absent players play as bots this round
@@ -143,12 +147,12 @@ export class Room {
    * the next round.
    * @returns {{slot:number, token:string}|null} assignment, or null if full
    */
-  addMember(id, ws, name) {
+  addMember(id, ws, name, colorId = null) {
     if (this.isFull) return null;
     const slot = this._freeSlot();
     if (slot < 0) return null;
     const token = genToken();
-    this.members.set(id, { ws, id, name: name || `Player ${slot + 1}`, slot, token, connected: true, graceTimer: null });
+    this.members.set(id, { ws, id, name: name || `Player ${slot + 1}`, slot, token, connected: true, graceTimer: null, colorId });
     if (!this.hostId) this.hostId = id;
     if (this.started) this._applyRosterToMatch(); // join in progress → spawn next round
     this._broadcastRoomState();
@@ -265,7 +269,10 @@ export class Room {
         this.controllers.set(m.slot, ctrl);
       }
       humanControllers.set(m.slot, ctrl);
-      players.push(new Player({ slot: m.slot, name: m.name, controller: ControllerType.HUMAN, color: colorForSlot(m.slot) }));
+      // Honour the player's equipped cosmetic colour (falls back to the slot colour).
+      const custom = m.colorId ? cosmetic(m.colorId) : null;
+      const color = custom && custom.color ? custom.color : colorForSlot(m.slot);
+      players.push(new Player({ slot: m.slot, name: m.name, controller: ControllerType.HUMAN, color }));
     }
     // Bots stacked above the human seats, each with its own skill.
     this.bots.slice(0, MAX_BOTS).forEach((b, i) => {
@@ -298,8 +305,8 @@ export class Room {
     this._broadcastRoomState();
   }
 
-  /** Host sets revive-bots (any time → effective immediately) and points-to-win (lobby only). */
-  setSettings({ pointsToWin, reviveBots }, byId) {
+  /** Host sets revive-bots (any time → effective immediately), points-to-win + mode (lobby only). */
+  setSettings({ pointsToWin, reviveBots, mode }, byId) {
     if (byId !== this.hostId) return;
     if (typeof reviveBots === 'boolean') {
       this.reviveBots = reviveBots;
@@ -309,7 +316,10 @@ export class Room {
     if (pointsToWin && !this.started) {
       this.pointsToWin = Math.max(1, Math.min(20, Math.round(pointsToWin)));
     }
-    rlog.info('settings', { code: this.code, reviveBots: this.reviveBots, pointsToWin: this.pointsToWin, started: this.started });
+    if (mode && !this.started && Object.values(GameModeId).includes(mode)) {
+      this.mode = mode;
+    }
+    rlog.info('settings', { code: this.code, reviveBots: this.reviveBots, pointsToWin: this.pointsToWin, mode: this.mode, started: this.started });
     this._broadcastRoomState();
   }
 
@@ -334,7 +344,7 @@ export class Room {
     const { players, humanControllers } = this._buildRoster();
 
     this.match = new B2Match(this.bus);
-    this.match.configure(players, { pointsToWin: this.pointsToWin, humanControllers, reviveBots: this.reviveBots });
+    this.match.configure(players, { pointsToWin: this.pointsToWin, mode: this.mode, humanControllers, reviveBots: this.reviveBots });
     this.match.start(); // emits round:created → _broadcastRoundStart
 
     this._matchOverSent = false;
@@ -434,6 +444,7 @@ export class Room {
       bots: this.bots,
       reviveBots: this.reviveBots,
       pointsToWin: this.pointsToWin,
+      mode: this.mode,
       members: this.roster(),
     });
   }

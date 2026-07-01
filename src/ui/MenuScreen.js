@@ -5,9 +5,10 @@ import { el } from './dom.js';
  * and reports the choice back via callbacks; the app owns navigation.
  */
 export class MenuScreen {
-  /** @param {{onPlay: ()=>void, onLethal?: ()=>void, onOnline?: ()=>void}} handlers */
-  constructor({ onPlay, onLethal, onOnline }) {
+  /** @param {{onQuickPlay?:()=>void, onPlay: ()=>void, onLethal?: ()=>void, onOnline?: ()=>void, onLocker?: ()=>void, onSettings?: ()=>void}} handlers */
+  constructor({ onQuickPlay, onPlay, onLethal, onOnline, onLocker, onSettings }) {
     this.root = el('div.screen.menu', {}, [
+      onSettings ? el('button.menu__gear', { text: '⚙', title: 'Settings', 'aria-label': 'Settings', on: { click: onSettings } }) : null,
       el('div.menu__logo', {}, [
         el('span.tank', { text: 'AZ TANK' }),
         el('span.trouble', { text: 'BATTLE' }),
@@ -16,9 +17,13 @@ export class MenuScreen {
         text: 'Last tank rolling wins. Bounce your shots off the walls — and watch your own ricochets.',
       }),
       el('div.menu__actions', {}, [
-        el('button.btn', { text: '▶  Play', on: { click: onPlay } }),
+        // "Just play" — the fastest path to gameplay: an instant local vs-bots
+        // match, no setup screen (the top retention lever is killing dead time).
+        onQuickPlay ? el('button.btn.btn--primary', { text: '⚡  Quick Play (vs bots)', on: { click: onQuickPlay } }) : null,
+        el('button.btn', { text: '▶  Play (setup)', on: { click: onPlay } }),
         onOnline ? el('button.btn.btn--online', { text: '🌐  Play Online', on: { click: onOnline } }) : null,
         el('button.btn.btn--lethal', { text: '☠  Lethal Mode', on: { click: onLethal || onPlay } }),
+        onLocker ? el('button.btn.btn--secondary', { text: '🎨  Locker', on: { click: onLocker } }) : null,
         el('button.btn.btn--ghost', { text: 'How to play', on: { click: () => this._toggleHelp() } }),
       ]),
       this._help(),

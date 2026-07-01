@@ -30,6 +30,8 @@ export class RemoteMatch {
     this.matchOver = false;
     this.matchWinner = null;
     this.roundResult = null;
+    this.modeId = 'classic';
+    this.timeRemaining = null; // seconds left on the round clock (timed modes)
     /** @type {{time:number, snap:object}[]} */
     this._buf = [];
   }
@@ -104,6 +106,8 @@ export class RemoteMatch {
     this.countdownValue = s.cd;
     this.showGo = s.go;
     this.roundNumber = s.rn;
+    if (s.mode) this.modeId = s.mode;
+    this.timeRemaining = s.tRemain != null ? s.tRemain : null;
     this.matchOver = s.mo;
     this.matchWinner = s.mw != null ? { slot: s.mw, name: nameForSlot(s.players, s.mw) } : null;
     this.roundResult = s.phase === RoundPhase.ENDING ? { winnerSlot: s.rr } : null;

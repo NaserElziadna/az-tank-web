@@ -8,7 +8,9 @@ import { EffectsLayer } from '../rendering/effects/EffectsLayer.js';
 import { Palette } from '../rendering/Palette.js';
 import { C } from '../constants/GameConstants.js';
 import { rng } from '../core/math/Random.js';
-import { RoundPhase, CollectibleType } from '../models/enums.js';
+import { RoundPhase, CollectibleType, GameModeId } from '../models/enums.js';
+import { settings } from '../game/services/SettingsService.js';
+import { profile } from '../game/services/ProfileService.js';
 
 const HUD_HEIGHT = 104;
 
@@ -90,7 +92,9 @@ export class PhaserRenderer {
       this.camera.fitToArena(round.maze.worldWidth, round.maze.worldHeight, w, h - this.hudHeight, this.drawHud ? 26 : 4);
       let ox = this.camera.offsetX;
       let oy = this.camera.offsetY;
-      if (this.shake > 0) {
+      // Screen shake is reserved for kills/explosions (never per bullet); the
+      // low-FX / reduce-motion preference suppresses it entirely.
+      if (this.shake > 0 && !settings.get('reduceMotion')) {
         ox += (rng.next() - 0.5) * this.shake;
         oy += (rng.next() - 0.5) * this.shake;
       }
@@ -99,6 +103,7 @@ export class PhaserRenderer {
       ctx.save();
       ctx.setTransform(s, 0, 0, s, ox, oy);
       this.maze.draw(ctx, round.maze);
+      if (match.modeId === GameModeId.KING) this._drawHill(ctx, round.maze);
       this._drawCollectibles(ctx, round.collectibles, alpha);
       this.colR.drawMines(ctx, round.mines);
       for (const tank of round.tanks) {
@@ -140,6 +145,8 @@ export class PhaserRenderer {
         const ty = lerp(tank.prevPosition.y, tank.position.y, alpha) - Math.sin(tank.rotation) * 1.7;
         this.effects.dust(tx, ty);
       }
+      // Equipped cosmetic trail behind the local player's tank (client-side only).
+      this._drawFocusTrail(round, alpha);
       this.projR.draw(ctx, round.projectiles, round.beams, alpha);
       this.effects.render(ctx);
       for (const tank of round.tanks) {
@@ -169,9 +176,71 @@ export class PhaserRenderer {
         }
         this.hud.draw(ctx, w, h, match.players, { version: this.version, activeWeapons, abilities, compositor: this.compositor });
       }
+
+      // Timed modes (deathmatch, etc.) show a round clock centred at the top.
+      if (match.phase === RoundPhase.PLAYING && match.timeRemaining != null) {
+        this._drawRoundClock(ctx, match.timeRemaining, w);
+      }
     }
 
     this._overlay(ctx, match, w, h);
+  }
+
+  /** Centre-top MM:SS round clock for timed modes; pulses red in the last 10 s. */
+  _drawRoundClock(ctx, seconds, w) {
+    const s = Math.max(0, Math.ceil(seconds));
+    const mm = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    const text = `${mm}:${ss}`;
+    const urgent = s <= 10;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const size = 30;
+    ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+    const y = 10;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeText(text, w / 2, y);
+    ctx.fillStyle = urgent && Math.floor(performance.now() / 250) % 2 === 0 ? '#ff5555' : '#fff';
+    ctx.fillText(text, w / 2, y);
+  }
+
+  /** King of the Hill: a pulsing target ring on the central tile. */
+  _drawHill(ctx, maze) {
+    const cx = maze.worldWidth / 2;
+    const cy = maze.worldHeight / 2;
+    const r = C.MAZE.TILE_SIZE * 1.15;
+    const pulse = 0.5 + 0.3 * Math.abs(Math.sin(performance.now() / 400));
+    ctx.save();
+    ctx.fillStyle = `rgba(224,179,65,${0.12 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(224,179,65,${0.55 * pulse})`;
+    ctx.lineWidth = 0.28;
+    ctx.setLineDash([1.0, 0.7]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Emit the equipped movement trail behind the local (focus) tank as it moves. */
+  _drawFocusTrail(round, alpha) {
+    if (this.focusSlot == null) return;
+    const trail = profile.equippedCosmetic('trail');
+    if (!trail || !trail.rgb) return;
+    const tank = round.tanks.find((t) => t.slot === this.focusSlot && t.alive);
+    if (!tank) return;
+    const x = lerp(tank.prevPosition.x, tank.position.x, alpha) - Math.cos(tank.rotation) * 1.3;
+    const y = lerp(tank.prevPosition.y, tank.position.y, alpha) - Math.sin(tank.rotation) * 1.3;
+    // Only lay trail while actually moving (avoid a puddle when parked).
+    if (this._lastTrail) {
+      const dx = x - this._lastTrail.x;
+      const dy = y - this._lastTrail.y;
+      if (dx * dx + dy * dy < 0.09) return;
+    }
+    this._lastTrail = { x, y };
+    this.effects.tankTrail(x, y, trail.rgb);
   }
 
   /** Cached radial dark-edge vignette (rebuilt only when the canvas resizes). */

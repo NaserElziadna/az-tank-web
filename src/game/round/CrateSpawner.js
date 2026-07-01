@@ -12,10 +12,14 @@ const CC = C.COLLECTIBLE;
  * living tank. Encapsulating the spawn cadence keeps the round controller lean.
  */
 export class CrateSpawner {
-  /** @param {string[]} [enabledKinds] crate content keys allowed this match */
-  constructor(enabledKinds = null) {
+  /**
+   * @param {string[]} [enabledKinds] crate content keys allowed this match
+   * @param {{goldRush?:boolean}} [opts] goldRush makes gold spawn fast & plentiful
+   */
+  constructor(enabledKinds = null, { goldRush = false } = {}) {
+    this.goldRush = goldRush;
     this.crateTimer = this._nextCrateDelay() * 0.4; // first crate comes a little sooner
-    this.goldTimer = this._nextGoldDelay();
+    this.goldTimer = goldRush ? 1.5 : this._nextGoldDelay(); // gold rush: near-instant first gold
     this.enabled = enabledKinds;
   }
 
@@ -24,6 +28,8 @@ export class CrateSpawner {
   }
 
   _nextGoldDelay() {
+    // Gold rush floods the arena with gold; otherwise it's an occasional bonus.
+    if (this.goldRush) return 2.0 + rng.next() * 2.5;
     return CC.GOLD_SPAWN_MIN + rng.next() * CC.GOLD_SPAWN_VARIANCE;
   }
 
@@ -32,6 +38,22 @@ export class CrateSpawner {
     const set = new Set(this.enabled);
     const menu = ALL_CRATES.filter((c) => set.has(c.kind));
     return menu.length ? menu : ALL_CRATES;
+  }
+
+  /**
+   * Pick a crate weighted by rarity so round-deciders (laser, homing, phase, …)
+   * stay scarce and commons (aimer, speed, mines) fill most crates. Falls back
+   * to a uniform pick if no weights are present.
+   */
+  _weightedPick(menu) {
+    let total = 0;
+    for (const c of menu) total += c.weight || 1;
+    let r = rng.next() * total;
+    for (const c of menu) {
+      r -= c.weight || 1;
+      if (r <= 0) return c;
+    }
+    return menu[menu.length - 1];
   }
 
   /** @param {number} dt @param {import('./RoundSimulation.js').RoundSimulation} sim */
@@ -47,7 +69,8 @@ export class CrateSpawner {
     this.goldTimer -= dt;
     if (this.goldTimer <= 0) {
       this.goldTimer = this._nextGoldDelay();
-      if (sim.collectibleCount(CollectibleType.GOLD) < CC.MAX_GOLDS && sim.aliveCount > 1) {
+      const cap = this.goldRush ? 6 : CC.MAX_GOLDS;
+      if (sim.collectibleCount(CollectibleType.GOLD) < cap && sim.aliveCount > 1) {
         this._spawnGold(sim);
       }
     }
@@ -56,7 +79,7 @@ export class CrateSpawner {
   _spawnCrate(sim) {
     const tile = this._findTile(sim, CC.CRATE_MIN_TILES_TO_TANKS);
     if (!tile) return;
-    const pick = rng.pick(this._crateMenu());
+    const pick = this._weightedPick(this._crateMenu());
     const center = sim.maze.tileCenter(tile.x, tile.y);
     sim.addCollectible(
       new CollectibleEntity({

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed background so the icon works as a maskable ("any") icon: the
+       tank sits inside the centre safe zone (~60%), clear of any mask crop. -->
+  <rect width="512" height="512" fill="#15171c"/>
+  <rect width="512" height="512" fill="url(#g)"/>
+  <defs>
+    <radialGradient id="g" cx="50%" cy="34%" r="75%">
+      <stop offset="0%" stop-color="#2a2e37"/>
+      <stop offset="100%" stop-color="#15171c"/>
+    </radialGradient>
+  </defs>
+  <!-- Top-down tank, centred, within the maskable safe zone. -->
+  <g transform="translate(256 262) rotate(-90)">
+    <!-- treads -->
+    <rect x="-92" y="-104" width="40" height="208" rx="16" fill="#111"/>
+    <rect x="52" y="-104" width="40" height="208" rx="16" fill="#111"/>
+    <!-- hull -->
+    <rect x="-78" y="-86" width="156" height="172" rx="26" fill="#e14041"/>
+    <rect x="-78" y="-86" width="156" height="60" rx="26" fill="#ef5b5c" opacity="0.55"/>
+    <!-- turret -->
+    <circle cx="0" cy="0" r="52" fill="#c0322f"/>
+    <circle cx="0" cy="0" r="52" fill="#fff" opacity="0.08"/>
+    <!-- barrel -->
+    <rect x="-15" y="-150" width="30" height="120" rx="10" fill="#1c1c20"/>
+  </g>
+</svg>

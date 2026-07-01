@@ -3,10 +3,15 @@ import { PhysicsWorld } from '../physics/PhysicsWorld.js';
 import { MazeGraph } from '../maze/MazeGraph.js';
 import { Vector2 } from '../core/math/Vector2.js';
 import { C } from '../constants/GameConstants.js';
-import { CollectibleType } from '../models/enums.js';
+import { CollectibleType, GameModeId } from '../models/enums.js';
 import { WeaponFactory } from '../weapons/WeaponFactory.js';
 import { BulletWeapon } from '../weapons/BulletWeapon.js';
 import { rng } from '../core/math/Random.js';
+import { createMode } from '../game/mode/GameMode.js';
+import { Player } from '../models/Player.js';
+import { AIController } from '../ai/AIController.js';
+import { colorForSlot } from '../rendering/Palette.js';
+import { ControllerType } from '../models/enums.js';
 
 let _id = 1;
 const nextId = () => _id++;
@@ -104,8 +109,9 @@ class B2Tank {
     this.weaponQueue.push(w);
     if (this.weaponQueue.length > C.MAX_WEAPON_QUEUE) this.weaponQueue.shift();
   }
-  giveShield() {
-    this.shield = { time: C.UPGRADES.SHIELD.lifetime };
+  giveShield(spawn = false) {
+    // Spawn protection is a shorter shield handed out on (re)spawn in timed modes.
+    this.shield = { time: spawn ? C.UPGRADES.SPAWN_SHIELD.lifetime : C.UPGRADES.SHIELD.lifetime, spawn };
   }
   giveSpeedBoost() {
     this.speedBoost = { time: C.UPGRADES.SPEED_BOOST.lifetime };
@@ -403,7 +409,11 @@ export class B2Round {
     this.reviveBots = false;
     this.allHumansDead = false; // round ended by a simultaneous human wipe (no winner)
     this._time = 0; // sim clock (s) for scheduling revives
-    this._reviveQueue = []; // [{slot, at}] dead bots awaiting respawn
+    this.playTime = 0; // clock that advances only during live play (timed modes)
+    this._reviveQueue = []; // [{slot, at, shield}] dead tanks awaiting respawn
+    // Win/score/respawn strategy (set by B2Match). Defaults to classic so the
+    // round is safe to run standalone (tests / tools).
+    this.mode = createMode(GameModeId.CLASSIC);
   }
 
   emit(type, payload) {
@@ -448,7 +458,7 @@ export class B2Round {
    * Death destroyed the Box2D body ({@link _killTank}), so this is a full rebuild,
    * not an `alive = true` flip. Emits `tank:revived` for the spawn-in effect.
    */
-  reviveTank(slot) {
+  reviveTank(slot, { shield = false } = {}) {
     const tank = this._bySlot.get(slot);
     if (!tank || tank.alive) return;
     const spawn = tank.spawn || this.maze.tankSpawns[0];
@@ -476,6 +486,9 @@ export class B2Round {
     tank.locked = false;
     tank.stuck = false;
     tank._bumpCd = 0;
+    // Timed/frag modes hand back brief spawn protection so a respawn isn't an
+    // instant re-kill by a camper.
+    if (shield) tank.giveShield(true);
     this.emit('tank:revived', { slot, colorKey: tank.colorKey, x: spawn.x, y: spawn.y });
   }
   setController(slot, controller) {
@@ -484,6 +497,7 @@ export class B2Round {
 
   update(dt, acceptInput) {
     this._time += dt;
+    if (acceptInput) this.playTime += dt; // only counts live play (not countdown/ending)
     // 1. intents
     for (const t of this.tanks) {
       if (!t.alive) continue;
@@ -519,58 +533,33 @@ export class B2Round {
     this._checkFinished();
   }
 
-  /** Bring back queued bots whose respawn delay has elapsed, if a human remains. */
+  /** Bring back queued tanks whose respawn delay has elapsed (mode-gated). */
   _processRevives() {
     if (this._reviveQueue.length === 0) return;
     const due = [];
     this._reviveQueue = this._reviveQueue.filter((r) => {
       if (this._time < r.at) return true;
-      due.push(r.slot);
+      due.push(r);
       return false;
     });
-    if (!due.length) return;
-    const humanAlive = this.humansAlive > 0;
-    for (const slot of due) if (humanAlive) this.reviveTank(slot); // else let the round end
+    // The gate is re-checked now (not when queued): classic won't revive a bot
+    // once the last human is gone, so a bots-only duel can't decide the round.
+    for (const r of due) if (this.mode.allowRevive(this, r.slot)) this.reviveTank(r.slot, { shield: r.shield });
   }
 
   /**
-   * Decide the round. Online is player-vs-player, so the round resolves on human
-   * elimination: the last human alive wins (you never sit watching bots fight).
-   * Falls back to the classic last-tank-standing rule when there are no humans.
+   * Decide the round via the active {@link GameMode} — classic resolves on
+   * elimination (last human / last tank), timed modes on the clock. The mode
+   * returns `{over, winnerSlot, allHumansDead}`; the round just records it.
    */
   _checkFinished() {
     if (this.finished) return;
-    // A lone tank (solo human with no bots, or everyone left but one) can't be
-    // resolved by the elimination rules below, so end the round directly — a
-    // match must never hang. Winner is the survivor, if any.
-    if (this.tanks.length <= 1) {
-      this.finished = true;
-      const s = this.tanks.find((t) => t.alive);
-      this.winnerSlot = s ? s.slot : null;
-      this.emit('round:decided', { winnerSlot: this.winnerSlot });
-      return;
-    }
-    const humanCount = this.humanCount;
-    if (humanCount >= 2) {
-      const alive = this.humansAlive;
-      if (alive === 0) {
-        // Simultaneous wipe — no winner; the match replays the round.
-        this.finished = true;
-        this.allHumansDead = true;
-        this.winnerSlot = null;
-        this.emit('round:decided', { winnerSlot: null });
-      } else if (alive <= 1) {
-        this.finished = true;
-        const s = this.tanks.find((t) => t.alive && t.player.isHuman);
-        this.winnerSlot = s ? s.slot : null;
-        this.emit('round:decided', { winnerSlot: this.winnerSlot });
-      }
-    } else if (this.aliveCount <= 1 && this.tanks.length > 1) {
-      this.finished = true;
-      const s = this.tanks.find((t) => t.alive);
-      this.winnerSlot = s ? s.slot : null;
-      this.emit('round:decided', { winnerSlot: this.winnerSlot });
-    }
+    const res = this.mode.evaluateRound(this);
+    if (!res || !res.over) return;
+    this.finished = true;
+    this.winnerSlot = res.winnerSlot ?? null;
+    this.allHumansDead = !!res.allHumansDead;
+    this.emit('round:decided', { winnerSlot: this.winnerSlot });
   }
 
   _resolveContacts() {
@@ -608,9 +597,18 @@ export class B2Round {
     this.emit('tank:bump', { x, y });
   }
 
+  /** In team modes, a shot never harms a teammate (your own ricochet still can). */
+  _friendlyFireBlocked(ownerSlot, victim) {
+    if (!this.mode.isTeam || ownerSlot === victim.slot) return false;
+    const owner = this.getTank(ownerSlot);
+    return !!owner && owner.player.team != null && owner.player.team === victim.player.team;
+  }
+
   _projectileHitTank(p, tank) {
     if (!p || !tank || p.dead || !tank.alive) return;
     if (!p.isDeadlyTo(tank.slot)) return;
+    // Teammate shot: pass through (no damage), and don't consume the projectile.
+    if (this._friendlyFireBlocked(p.ownerSlot, tank)) return;
     if (tank.hasActiveShield) {
       // Own un-bounced shot passes through; otherwise reflect + arm.
       if (p.ownerSlot === tank.slot && !p.deadlyToOwner) return;
@@ -623,12 +621,16 @@ export class B2Round {
       p.deadlyToOwner = true;
       return;
     }
-    this._damageTank(tank, p.damage, p.ownerSlot);
+    // Classify the kill for balance telemetry: self (own ricochet/mine), a wall
+    // ricochet, mine shrapnel, or a clean direct hit.
+    const bounceCount = p._bounceTimes ? p._bounceTimes.length : 0;
+    const cause = p.ownerSlot === tank.slot ? 'self' : p.kind === 'shrapnel' ? 'mine' : bounceCount > 0 ? 'ricochet' : 'direct';
+    this._damageTank(tank, p.damage, p.ownerSlot, { cause, weaponKind: p.kind, bounceCount });
     if (p.kind !== 'shrapnel') p.destroy(this);
   }
 
-  /** Apply damage; kill only when HP runs out. */
-  _damageTank(tank, amount, killerSlot) {
+  /** Apply damage; kill only when HP runs out. `meta` carries kill-cause telemetry. */
+  _damageTank(tank, amount, killerSlot, meta = null) {
     if (!tank.alive) return;
     tank.hp -= amount;
     this.emit('tank:damaged', {
@@ -639,24 +641,30 @@ export class B2Round {
       hp: Math.max(0, tank.hp),
       maxHp: tank.maxHp,
     });
-    if (tank.hp <= 0) this._killTank(tank, killerSlot);
+    if (tank.hp <= 0) this._killTank(tank, killerSlot, meta);
   }
 
-  _killTank(tank, killerSlot) {
+  _killTank(tank, killerSlot, meta = null) {
     if (!tank.alive) return;
     tank.alive = false;
     this.killLog.push({ victim: tank.slot, killer: killerSlot });
     if (this.killLog.length > 16) this.killLog.shift();
     this.b2.destroyBody(tank.body);
-    this.emit('tank:destroyed', { slot: tank.slot, killerSlot, colorKey: tank.colorKey, x: tank.position.x, y: tank.position.y });
-    // Revive a fallen bot after a short delay, but ONLY in a genuine ≥2-human
-    // match: revive keeps live opponents around so a bots-only duel can't decide
-    // a human-vs-human round. In a solo (1-human) game it would make the round
-    // unwinnable (bots respawn forever), so there it stays classic last-tank-
-    // standing — the human wins by clearing every bot.
-    if (this.reviveBots && this.humanCount >= 2 && !tank.player.isHuman && this.humansAlive > 0) {
-      this._reviveQueue.push({ slot: tank.slot, at: this._time + C.FLOW.REVIVE_DELAY });
-    }
+    this.emit('tank:destroyed', {
+      slot: tank.slot,
+      killerSlot,
+      colorKey: tank.colorKey,
+      x: tank.position.x,
+      y: tank.position.y,
+      cause: meta ? meta.cause : 'unknown',
+      weaponKind: meta ? meta.weaponKind : null,
+      bounceCount: meta ? meta.bounceCount : 0,
+    });
+    // Let the mode score the kill (frag modes) and decide respawning. Classic
+    // only revives bots online while a human is alive; deathmatch respawns all.
+    this.mode.onKill(this, tank, killerSlot);
+    const resp = this.mode.respawnFor(this, tank);
+    if (resp) this._reviveQueue.push({ slot: tank.slot, at: this._time + resp.delay, shield: !!resp.shield });
   }
 
   _pickup(c, tank) {
@@ -675,8 +683,33 @@ export class B2Round {
         if (c.kind === 'laser') tank.giveAimer();
       }
     }
+    // Let the mode score the pickup (e.g. gold rush turns gold/diamonds into points).
+    this.mode.onPickup(this, tank, c);
     c.destroy(this);
-    this.emit('collectible:picked', { type: c.category, slot: tank.slot });
+    this.emit('collectible:picked', { type: c.category, kind: c.kind, slot: tank.slot });
+  }
+
+  /**
+   * Spawn a fresh set of AI tanks mid-round (Co-op Waves). New bots take the next
+   * free slots and random spawns; they're wired to the AI and enter next tick.
+   * @returns {number[]} the slots that were spawned
+   */
+  spawnWave(count, difficulty) {
+    const used = new Set(this.tanks.map((t) => t.slot));
+    let next = 0;
+    const spawnsList = this.maze.tankSpawns;
+    const spawned = [];
+    for (let i = 0; i < count; i++) {
+      while (used.has(next)) next++;
+      const slot = next;
+      used.add(slot);
+      const spawn = spawnsList[slot % spawnsList.length];
+      const player = new Player({ slot, name: 'Enemy', controller: ControllerType.AI, color: colorForSlot(slot), difficulty });
+      this.addTank(player, spawn);
+      this.setController(slot, new AIController(player));
+      spawned.push(slot);
+    }
+    return spawned;
   }
 
   // ── spawning (called by weapons / mines) ──────────────────────────────────
@@ -711,7 +744,9 @@ export class B2Round {
     const trace = this.physics.tracePath(muzzle.x, muzzle.y, angle, { maxBounces: 6, maxLength: 200, radius: 0, tanks: tanksView, ignoreTankId: tank.slot });
     if (trace.hitTank) {
       const victim = this.getTank(trace.hitTank.id);
-      if (victim && !victim.hasActiveShield) this._damageTank(victim, cfg.damage, tank.slot);
+      if (victim && !victim.hasActiveShield && !this._friendlyFireBlocked(tank.slot, victim)) {
+        this._damageTank(victim, cfg.damage, tank.slot, { cause: 'direct', weaponKind: 'laser', bounceCount: 0 });
+      }
     }
     this.beams.push({ points: trace.points, life: cfg.maxLifetime, max: cfg.maxLifetime, colorKey: tank.colorKey });
   }
@@ -726,8 +761,9 @@ export class B2Round {
     const hitR = cfg.width + C.TANK.COLLISION_RADIUS;
     for (const t of this.tanks) {
       if (!t.alive || t.slot === tank.slot || t.hasActiveShield) continue;
+      if (this._friendlyFireBlocked(tank.slot, t)) continue;
       if (segPointDist(t.position.x, t.position.y, m.x, m.y, ex, ey) <= hitR) {
-        this._damageTank(t, cfg.damage, tank.slot);
+        this._damageTank(t, cfg.damage, tank.slot, { cause: 'ability', weaponKind: 'megaLaser', bounceCount: 0 });
       }
     }
     this.beams.push({ points: [{ x: m.x, y: m.y }, { x: ex, y: ey }], life: cfg.maxLifetime, max: cfg.maxLifetime, colorKey: tank.colorKey, mega: true });

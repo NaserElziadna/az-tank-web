@@ -58,7 +58,47 @@ app.use((req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+
+// ── WebSocket origin allowlist ──────────────────────────────────────────────
+// Portals (CrazyGames et al.) embed the game in an iframe, so browser clients
+// arrive with the portal's Origin header. We allow same-origin, localhost, any
+// origin in ALLOWED_ORIGINS (comma-separated env), and a built-in list of known
+// game portals. Native/no-origin clients are allowed. Set WS_ALLOW_ALL=1 to
+// disable the check entirely. Rejections are logged, never silent.
+const PORTAL_SUFFIXES = ['crazygames.com', 'poki.com', 'gamedistribution.com', 'gamemonetize.com', 'itch.io', 'itch.zone', 'famobi.com', 'y8.com'];
+const ENV_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const ALLOW_ALL = /^(1|true|yes)$/i.test(process.env.WS_ALLOW_ALL || '');
+
+function hostOf(origin) {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isAllowedOrigin(origin, req) {
+  if (ALLOW_ALL) return true;
+  if (!origin || origin === 'null') return true; // native clients / file://
+  const host = hostOf(origin);
+  if (!host) return false;
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) return true;
+  // Same-origin as the request's Host header (our own deploy).
+  const reqHost = (req.headers.host || '').split(':')[0].toLowerCase();
+  if (reqHost && host === reqHost) return true;
+  if (ENV_ORIGINS.includes(origin.toLowerCase()) || ENV_ORIGINS.includes(host)) return true;
+  return PORTAL_SUFFIXES.some((suf) => host === suf || host.endsWith('.' + suf));
+}
+
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  verifyClient: ({ origin, req }) => {
+    const ok = isAllowedOrigin(origin, req);
+    if (!ok) slog.warn('ws origin rejected', { origin: origin || null, host: req.headers.host || null });
+    return ok;
+  },
+});
 const rooms = new RoomManager();
 
 let nextId = 1;
@@ -95,7 +135,7 @@ function handle(ws, conn, msg) {
   switch (msg.t) {
     case MSG.CREATE_ROOM: {
       const room = rooms.createRoom();
-      joinRoom(ws, conn, room, msg.name);
+      joinRoom(ws, conn, room, msg.name, msg.colorId);
       break;
     }
     case MSG.JOIN_ROOM: {
@@ -104,7 +144,7 @@ function handle(ws, conn, msg) {
       // Joining mid-match is allowed (you fill an open seat and spawn next round);
       // only a room with every human seat taken turns players away.
       if (room.isFull) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Room is full' });
-      joinRoom(ws, conn, room, msg.name);
+      joinRoom(ws, conn, room, msg.name, msg.colorId);
       break;
     }
     case MSG.REJOIN: {
@@ -127,7 +167,7 @@ function handle(ws, conn, msg) {
       break;
     }
     case MSG.SET_SETTINGS: {
-      conn.room?.setSettings({ pointsToWin: msg.pointsToWin, reviveBots: msg.reviveBots }, conn.id);
+      conn.room?.setSettings({ pointsToWin: msg.pointsToWin, reviveBots: msg.reviveBots, mode: msg.mode }, conn.id);
       break;
     }
     case MSG.INPUT: {
@@ -152,8 +192,8 @@ function handle(ws, conn, msg) {
   }
 }
 
-function joinRoom(ws, conn, room, name) {
-  const res = room.addMember(conn.id, ws, name);
+function joinRoom(ws, conn, room, name, colorId) {
+  const res = room.addMember(conn.id, ws, name, colorId);
   if (!res) return send(ws, { t: MSG.JOIN_RESULT, ok: false, reason: 'Could not join' });
   conn.room = room;
   slog.info('joinRoom', { id: conn.id, room: room.code, slot: res.slot, isHost: room.hostId === conn.id, members: room.members.size });

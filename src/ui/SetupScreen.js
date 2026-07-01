@@ -1,9 +1,11 @@
 import { el, clear } from './dom.js';
 import { colorForSlot } from '../rendering/Palette.js';
 import { schemeForSlot } from '../core/input/ControlSchemes.js';
-import { ControllerType, Difficulty } from '../models/enums.js';
+import { ControllerType, Difficulty, GameModeId } from '../models/enums.js';
 import { AssetStore } from '../phaser/AssetStore.js';
 import { TankIconCompositor } from '../phaser/TankIconCompositor.js';
+import { MODE_MENU, createMode } from '../game/mode/GameMode.js';
+import { settings } from '../game/services/SettingsService.js';
 
 const MAX_HUMANS = 4;
 
@@ -21,6 +23,7 @@ export class SetupScreen {
     this.state = initial || {
       count: 2,
       pointsToWin: 5,
+      mode: settings.get('mode') || GameModeId.CLASSIC,
       players: this._defaultPlayers(2),
     };
 
@@ -32,12 +35,12 @@ export class SetupScreen {
     this.assets.load(320).then(() => this._renderPlayers());
 
     this.grid = el('div.players');
+    this.header = el('div.setup__row');
+    this.modeBlurb = el('p.setup__mode-blurb', { text: '' });
     this.root = el('div.screen.setup', {}, [
       el('div.setup__title', { text: 'Game Setup' }),
-      el('div.setup__row', {}, [
-        this._countField(),
-        this._pointsField(),
-      ]),
+      this.header,
+      this.modeBlurb,
       this.grid,
       el('div.setup__row', {}, [
         el('button.btn.btn--secondary', { text: '← Back', on: { click: onBack } }),
@@ -45,7 +48,34 @@ export class SetupScreen {
       ]),
     ]);
 
+    this._renderHeader();
     this._renderPlayers();
+  }
+
+  /** The mode / players / win-target row (rebuilt when the mode changes, since a
+   *  timed mode like Deathmatch has no "first to N" target). */
+  _renderHeader() {
+    clear(this.header);
+    const mode = createMode(this.state.mode);
+    this.header.appendChild(this._modeField());
+    this.header.appendChild(this._countField());
+    if (mode.usesPointsToWin) this.header.appendChild(this._pointsField());
+    this.modeBlurb.textContent = mode.blurb;
+  }
+
+  _modeField() {
+    const sel = el(
+      'select',
+      { on: { change: (e) => this._setMode(e.target.value) } },
+      MODE_MENU.map((m) => el('option', { value: m.id, text: m.name, selected: m.id === this.state.mode ? 'selected' : null })),
+    );
+    return el('label.field', {}, ['Mode:', sel]);
+  }
+
+  _setMode(id) {
+    this.state.mode = id;
+    settings.set('mode', id); // remembered for Quick Play + next time
+    this._renderHeader();
   }
 
   _defaultPlayers(count) {
@@ -190,6 +220,7 @@ export class SetupScreen {
   _start() {
     this.onStart({
       pointsToWin: this.state.pointsToWin,
+      mode: this.state.mode,
       players: this.state.players.map((p, i) => ({
         slot: i,
         name: p.name || `P${i + 1}`,

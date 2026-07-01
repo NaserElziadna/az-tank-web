@@ -103,12 +103,15 @@ export function buildSnapshot(match) {
     : [];
   const beams = round ? round.beams.map((b) => ({ points: b.points, life: b.life, max: b.max, color: b.colorKey, mega: !!b.mega })) : [];
 
+  const tRemain = match.timeRemaining;
   return {
     t: MSG.SNAPSHOT,
     phase: match.phase,
     cd: match.countdownValue,
     go: match.showGo,
     rn: match.roundNumber,
+    mode: match.modeId,
+    tRemain: tRemain == null ? null : round_num(tRemain),
     mo: match.matchOver,
     mw: match.matchWinner ? match.matchWinner.slot : null,
     rr: match.roundResult ? match.roundResult.winnerSlot : null,

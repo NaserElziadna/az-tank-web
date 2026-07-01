@@ -43,3 +43,17 @@ export const RoundPhase = Object.freeze({
   ENDING: 'ending',
   ENDED: 'ended',
 });
+
+/**
+ * Game-mode identifiers. Each id maps to a strategy in {@link ../game/mode/GameMode.js}
+ * that decides win/score/respawn rules; the engine, physics, AI and net layers
+ * are mode-agnostic. CLASSIC is the original last-tank-standing, first-to-N match.
+ */
+export const GameModeId = Object.freeze({
+  CLASSIC: 'classic', // last tank standing each round, first to N round-wins
+  DEATHMATCH: 'deathmatch', // timed frag-fest, everyone respawns, most kills wins
+  TEAM: 'team', // 2v2 team last-team-standing
+  KING: 'king', // king of the hill — hold the centre tile
+  GOLD_RUSH: 'goldRush', // grab the most gold before time runs out
+  COOP: 'coop', // humans vs escalating waves of AI (PvE)
+});

@@ -24,7 +24,12 @@ function shade(hex, amount) {
   return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
 }
 
-function makeTankColor(name, hex) {
+/**
+ * Build a full tank-colour object from a single base hex — hull/turret/tread/
+ * highlight are derived so the vector tank reads as 3D. Exported so the cosmetic
+ * catalog can mint custom colours the same way the slot palette does.
+ */
+export function makeTankColor(name, hex) {
   return {
     name,
     base: hex,
