@@ -5,7 +5,8 @@ import { log } from '../core/log/Logger.js';
 
 const mlog = log.scope('remote');
 
-const INTERP_DELAY_MS = 100; // render ~2 snapshots in the past to absorb jitter
+const INTERP_DELAY_MS = 70; // render slightly in the past to absorb jitter
+const EXTRAPOLATE_CAP = 2; // alpha cap when a snapshot is late → predict ~1 interval ahead
 const BUFFER_MAX = 16;
 
 /**
@@ -65,16 +66,29 @@ export class RemoteMatch {
     if (!this.round || this._buf.length === 0) return;
     const renderTime = now - INTERP_DELAY_MS;
 
-    let a = this._buf[0];
-    let b = this._buf[0];
-    for (let i = 0; i < this._buf.length; i++) {
-      if (this._buf[i].time <= renderTime) {
-        a = this._buf[i];
-        b = this._buf[i + 1] || this._buf[i];
+    const last = this._buf[this._buf.length - 1];
+    let a;
+    let b;
+    let alpha;
+    if (renderTime >= last.time && this._buf.length >= 2) {
+      // Snapshot is late → extrapolate along the last segment (capped) so remote
+      // tanks/bullets keep gliding instead of freezing then snapping on arrival.
+      a = this._buf[this._buf.length - 2];
+      b = last;
+      const span = b.time - a.time;
+      alpha = span > 0 ? Math.min(EXTRAPOLATE_CAP, (renderTime - a.time) / span) : 1;
+    } else {
+      a = this._buf[0];
+      b = this._buf[0];
+      for (let i = 0; i < this._buf.length; i++) {
+        if (this._buf[i].time <= renderTime) {
+          a = this._buf[i];
+          b = this._buf[i + 1] || this._buf[i];
+        }
       }
+      const span = b.time - a.time;
+      alpha = span > 0 ? Math.min(1, Math.max(0, (renderTime - a.time) / span)) : 0;
     }
-    const span = b.time - a.time;
-    const alpha = span > 0 ? Math.min(1, Math.max(0, (renderTime - a.time) / span)) : 0;
 
     this._applyScalars(b.snap);
     this._applyTanks(a.snap, b.snap, alpha);
