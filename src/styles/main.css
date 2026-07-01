@@ -603,8 +603,9 @@ body {
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  /* Translucent but clearly visible on the light arena. */
+  background: rgba(24, 26, 32, 0.3);
+  border: 3px solid rgba(255, 255, 255, 0.5);
   display: grid;
   place-items: center;
   pointer-events: none;
@@ -618,9 +619,9 @@ body {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.28);
-  border: 2px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: transform 0.04s linear;
   pointer-events: none;
 }
@@ -641,8 +642,8 @@ body {
   font-size: 17px;
   letter-spacing: 1px;
   color: #fff;
-  background: radial-gradient(circle at 50% 38%, rgba(255, 107, 94, 0.66), rgba(210, 59, 59, 0.66));
-  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: radial-gradient(circle at 50% 38%, rgba(255, 107, 94, 0.82), rgba(210, 59, 59, 0.82));
+  border: 2px solid rgba(255, 255, 255, 0.6);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
@@ -665,8 +666,8 @@ body {
   place-items: center;
   font-size: 22px;
   line-height: 1;
-  background: radial-gradient(circle at 50% 38%, rgba(155, 231, 255, 0.62), rgba(54, 182, 224, 0.62));
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: radial-gradient(circle at 50% 38%, rgba(155, 231, 255, 0.82), rgba(54, 182, 224, 0.82));
+  border: 2px solid rgba(255, 255, 255, 0.6);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32);
 }
 .touch__ability.is-active {
@@ -756,7 +757,7 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: rgba(18, 20, 26, 0.38);
+  background: rgba(18, 20, 26, 0.5);
   border-radius: 999px;
   padding: 3px 9px;
   font-weight: 800;
